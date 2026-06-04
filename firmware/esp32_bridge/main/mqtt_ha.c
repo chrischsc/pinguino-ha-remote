@@ -10,6 +10,8 @@
 #define AVTY_TOPIC "ganymede/status"
 #define CMD_PREFIX "ganymede/cmd/"
 #define NRF_TOPIC  "ganymede/nrf"
+#define PRES_TOPIC "ganymede/presence"
+#define PRES_AVTY  "ganymede/presence/status"   // per-sensor availability (LD2410 alive?)
 
 static const char *TAG = "mqtt";
 
@@ -23,6 +25,8 @@ static const struct { const char *name, *label; } BTNS[] = {
 static esp_mqtt_client_handle_t s_client;
 static volatile bool s_connected;
 static char s_nrf[16] = "offline";   // last nRF link state, republished on (re)connect
+static char s_presence[4] = "OFF";      // last LD2410 presence, republished on (re)connect
+static char s_presence_avail[8] = "offline";   // LD2410 availability (online once frames seen)
 static char s_host[64] = "";
 static int  s_port = 1883;
 static char s_user[48] = "";
@@ -88,6 +92,17 @@ static void publish_discovery(void)
         "\"icon\":\"mdi:bluetooth\",\"entity_category\":\"diagnostic\",\"availability_topic\":\"" AVTY_TOPIC "\","
         "\"device\":{\"identifiers\":[\"ganymede_bridge\"],\"name\":\"Ganymede Bridge\"}}");
     esp_mqtt_client_publish(s_client, topic, payload, 0, 1, true);
+    // LD2410 presence -> occupancy binary_sensor. Availability requires BOTH the bridge to be
+    // online AND the LD2410 to be producing frames, so a dead/unwired sensor shows "unavailable"
+    // in HA instead of a false "vacant" that could drive absence automations.
+    snprintf(topic, sizeof(topic), "homeassistant/binary_sensor/ganymede_presence/config");
+    snprintf(payload, sizeof(payload),
+        "{\"name\":\"Presence\",\"unique_id\":\"ganymede_presence\",\"state_topic\":\"" PRES_TOPIC "\","
+        "\"device_class\":\"occupancy\",\"payload_on\":\"ON\",\"payload_off\":\"OFF\","
+        "\"availability\":[{\"topic\":\"" AVTY_TOPIC "\"},{\"topic\":\"" PRES_AVTY "\"}],"
+        "\"availability_mode\":\"all\","
+        "\"device\":{\"identifiers\":[\"ganymede_bridge\"],\"name\":\"Ganymede Bridge\"}}");
+    esp_mqtt_client_publish(s_client, topic, payload, 0, 1, true);
 }
 
 void mqtt_ha_publish_nrf(const char *state)
@@ -95,6 +110,25 @@ void mqtt_ha_publish_nrf(const char *state)
     strlcpy(s_nrf, state ? state : "offline", sizeof(s_nrf));
     if (s_client && s_connected)
         esp_mqtt_client_publish(s_client, NRF_TOPIC, s_nrf, 0, 1, true);
+}
+
+void mqtt_ha_publish_presence(bool present)
+{
+    // We only have a real presence reading when the sensor is alive, so mark it available here.
+    strlcpy(s_presence, present ? "ON" : "OFF", sizeof(s_presence));
+    strlcpy(s_presence_avail, "online", sizeof(s_presence_avail));
+    if (s_client && s_connected) {
+        esp_mqtt_client_publish(s_client, PRES_AVTY, s_presence_avail, 0, 1, true);
+        esp_mqtt_client_publish(s_client, PRES_TOPIC, s_presence, 0, 1, true);
+    }
+}
+
+void mqtt_ha_presence_unavailable(void)
+{
+    // LD2410 dropped out: don't assert OFF (that reads as "vacant"); flag the entity unavailable.
+    strlcpy(s_presence_avail, "offline", sizeof(s_presence_avail));
+    if (s_client && s_connected)
+        esp_mqtt_client_publish(s_client, PRES_AVTY, s_presence_avail, 0, 1, true);
 }
 
 void mqtt_ha_publish_env(float t, float h, float p)
@@ -117,6 +151,8 @@ static void on_mqtt(void *args, esp_event_base_t base, int32_t id, void *data)
         esp_mqtt_client_publish(s_client, AVTY_TOPIC, "online", 0, 1, true);
         publish_discovery();
         esp_mqtt_client_publish(s_client, NRF_TOPIC, s_nrf, 0, 1, true);
+        esp_mqtt_client_publish(s_client, PRES_AVTY, s_presence_avail, 0, 1, true);
+        esp_mqtt_client_publish(s_client, PRES_TOPIC, s_presence, 0, 1, true);
         esp_mqtt_client_subscribe(s_client, CMD_PREFIX "+", 1);
         break;
     case MQTT_EVENT_DISCONNECTED:
