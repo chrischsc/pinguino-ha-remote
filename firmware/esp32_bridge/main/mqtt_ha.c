@@ -1,7 +1,10 @@
 #include "mqtt_ha.h"
 #include "uart_link.h"
+#include "ac_state.h"
+#include "ac_cmd.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "mqtt_client.h"
 #include "esp_log.h"
 #include "nvs.h"
@@ -12,6 +15,7 @@
 #define NRF_TOPIC  "ganymede/nrf"
 #define PRES_TOPIC "ganymede/presence"
 #define PRES_AVTY  "ganymede/presence/status"   // per-sensor availability (LD2410 alive?)
+#define AC_BASE    "ganymede/ac/"                // climate state/<x> + command <x>/set
 
 static const char *TAG = "mqtt";
 
@@ -58,7 +62,7 @@ static void cfg_save(void)
 // ---- HA discovery ----
 static void publish_discovery(void)
 {
-    char topic[96], payload[420];
+    char topic[96], payload[640];
     for (size_t i = 0; i < NBTN; i++) {
         snprintf(topic, sizeof(topic), "homeassistant/button/ganymede_%s/config", BTNS[i].name);
         snprintf(payload, sizeof(payload),
@@ -103,6 +107,52 @@ static void publish_discovery(void)
         "\"availability_mode\":\"all\","
         "\"device\":{\"identifiers\":[\"ganymede_bridge\"],\"name\":\"Ganymede Bridge\"}}");
     esp_mqtt_client_publish(s_client, topic, payload, 0, 1, true);
+
+    // Open-loop AC model -> HA climate entity (mode / target temp / fan modes).
+    snprintf(topic, sizeof(topic), "homeassistant/climate/ganymede_ac/config");
+    snprintf(payload, sizeof(payload),
+        "{\"name\":\"Climatiseur\",\"unique_id\":\"ganymede_ac\","
+        "\"modes\":[\"off\",\"cool\",\"dry\",\"fan_only\"],"
+        "\"mode_command_topic\":\"" AC_BASE "mode/set\",\"mode_state_topic\":\"" AC_BASE "mode\","
+        "\"temperature_command_topic\":\"" AC_BASE "temp/set\",\"temperature_state_topic\":\"" AC_BASE "temp\","
+        "\"temperature_unit\":\"C\",\"min_temp\":%d,\"max_temp\":%d,\"temp_step\":1,"
+        "\"fan_modes\":[\"min\",\"medium\",\"max\",\"auto\"],"
+        "\"fan_mode_command_topic\":\"" AC_BASE "fan/set\",\"fan_mode_state_topic\":\"" AC_BASE "fan\","
+        "\"availability_topic\":\"" AVTY_TOPIC "\","
+        "\"device\":{\"identifiers\":[\"ganymede_bridge\"],\"name\":\"Ganymede Bridge\"}}",
+        AC_TEMP_MIN, AC_TEMP_MAX);
+    esp_mqtt_client_publish(s_client, topic, payload, 0, 1, true);
+
+    // COOL-only / airflow toggles -> HA switches (state mirrors the model; command = a press).
+    static const struct { const char *id, *name, *icon; } SW[] = {
+        {"swing",  "Swing",         "mdi:arrow-oscillating"},
+        {"eco",    "Eco Real Feel", "mdi:leaf"},
+        {"silent", "Silent",        "mdi:volume-mute"},
+    };
+    for (size_t i = 0; i < 3; i++) {
+        snprintf(topic, sizeof(topic), "homeassistant/switch/ganymede_%s/config", SW[i].id);
+        snprintf(payload, sizeof(payload),
+            "{\"name\":\"%s\",\"unique_id\":\"ganymede_sw_%s\","
+            "\"command_topic\":\"" AC_BASE "%s/set\",\"state_topic\":\"" AC_BASE "%s\","
+            "\"payload_on\":\"ON\",\"payload_off\":\"OFF\",\"icon\":\"%s\","
+            "\"availability_topic\":\"" AVTY_TOPIC "\","
+            "\"device\":{\"identifiers\":[\"ganymede_bridge\"],\"name\":\"Ganymede Bridge\"}}",
+            SW[i].name, SW[i].id, SW[i].id, SW[i].id, SW[i].icon);
+        esp_mqtt_client_publish(s_client, topic, payload, 0, 1, true);
+    }
+}
+
+void mqtt_ha_publish_ac(const ac_state_t *st)
+{
+    if (!s_client || !s_connected) return;
+    char v[8];
+    esp_mqtt_client_publish(s_client, AC_BASE "mode", ac_mode_ha(st), 0, 1, true);
+    snprintf(v, sizeof(v), "%d", st->temp_c);
+    esp_mqtt_client_publish(s_client, AC_BASE "temp", v, 0, 1, true);
+    esp_mqtt_client_publish(s_client, AC_BASE "fan", ac_fan_str(st->fan), 0, 1, true);
+    esp_mqtt_client_publish(s_client, AC_BASE "swing",  st->swing  ? "ON" : "OFF", 0, 1, true);
+    esp_mqtt_client_publish(s_client, AC_BASE "eco",    st->eco    ? "ON" : "OFF", 0, 1, true);
+    esp_mqtt_client_publish(s_client, AC_BASE "silent", st->silent ? "ON" : "OFF", 0, 1, true);
 }
 
 void mqtt_ha_publish_nrf(const char *state)
@@ -154,20 +204,33 @@ static void on_mqtt(void *args, esp_event_base_t base, int32_t id, void *data)
         esp_mqtt_client_publish(s_client, PRES_AVTY, s_presence_avail, 0, 1, true);
         esp_mqtt_client_publish(s_client, PRES_TOPIC, s_presence, 0, 1, true);
         esp_mqtt_client_subscribe(s_client, CMD_PREFIX "+", 1);
+        esp_mqtt_client_subscribe(s_client, AC_BASE "+/set", 1);   // climate + switch commands
+        { ac_state_t snap; ac_state_get_copy(&snap); mqtt_ha_publish_ac(&snap); }
         break;
     case MQTT_EVENT_DISCONNECTED:
         s_connected = false;
         break;
     case MQTT_EVENT_DATA: {
-        // topic = "ganymede/cmd/<btn>" (not null-terminated)
-        char btn[16] = {0};
-        const char *slash = NULL;
-        for (int k = e->topic_len - 1; k >= 0; k--) if (e->topic[k] == '/') { slash = &e->topic[k+1]; break; }
-        if (slash) {
-            int len = (int)(&e->topic[e->topic_len] - slash);
-            if (len > 0 && len < (int)sizeof(btn)) { memcpy(btn, slash, len); btn[len] = 0; }
-        }
-        if (btn[0]) {
+        // topic + payload arrive un-terminated; copy into bounded buffers.
+        char topic[64] = {0}, payload[24] = {0};
+        int tl = e->topic_len < (int)sizeof(topic) - 1 ? e->topic_len : (int)sizeof(topic) - 1;
+        memcpy(topic, e->topic, tl);
+        int pl = e->data_len < (int)sizeof(payload) - 1 ? e->data_len : (int)sizeof(payload) - 1;
+        memcpy(payload, e->data, pl);
+
+        if (!strncmp(topic, AC_BASE, strlen(AC_BASE))) {
+            // climate / switch command: ganymede/ac/<field>/set
+            const char *f = topic + strlen(AC_BASE);
+            bool on = !strcmp(payload, "ON");
+            if      (!strncmp(f, "mode/", 5))   ac_cmd_set_mode_ha(payload);
+            else if (!strncmp(f, "temp/", 5))   ac_cmd_set_temp(atoi(payload));
+            else if (!strncmp(f, "fan/", 4))    ac_cmd_set_fan(payload);
+            else if (!strncmp(f, "swing/", 6))  ac_cmd_set_switch("swing", on);
+            else if (!strncmp(f, "eco/", 4))    ac_cmd_set_switch("eco", on);
+            else if (!strncmp(f, "silent/", 7)) ac_cmd_set_switch("silent", on);
+            ESP_LOGI(TAG, "HA ac cmd '%s' = '%s'", f, payload);
+        } else if (!strncmp(topic, CMD_PREFIX, strlen(CMD_PREFIX))) {
+            const char *btn = topic + strlen(CMD_PREFIX);
             bool ok = uart_link_press(btn);
             ESP_LOGI(TAG, "HA press '%s' -> %s", btn, ok ? "sent" : "invalid");
         }
@@ -203,7 +266,12 @@ static void start_client(void)
     ESP_LOGI(TAG, "client started for %s", uri);
 }
 
-void mqtt_ha_init(void) { cfg_load(); start_client(); }
+void mqtt_ha_init(void)
+{
+    ac_state_on_change(mqtt_ha_publish_ac);   // push climate/switch state on every model change
+    cfg_load();
+    start_client();
+}
 
 bool mqtt_ha_save(const char *host, int port, const char *user, const char *pass)
 {

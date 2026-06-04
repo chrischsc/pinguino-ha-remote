@@ -1,5 +1,7 @@
 #include "rules.h"
 #include "ld2410.h"
+#include "ac_state.h"
+#include "ac_cmd.h"
 #include "uart_link.h"
 #include "mqtt_ha.h"
 #include <string.h>
@@ -13,85 +15,93 @@
 #define NVS_NS  "rules"
 #define NVS_KEY "list"
 #define NVS_VER_KEY "ver"
-// Bump whenever rule_t's layout changes. A stored blob from a different version is ignored
-// (rules reset to none) rather than misdecoded — there's no shipped installed base to migrate.
-#define RULES_VER 2
+#define RULES_VER 3          // bumped: action+cooldown -> target, debounced edge-trigger
+
+// Debounce the LD2410 presence: the raw signal must hold its new value this long before the
+// debounced state flips, so a momentarily-lost still target doesn't reset the sustained timer.
+#define DEBOUNCE_S  10
+#define DEBOUNCE_US ((int64_t)DEBOUNCE_S * 1000000)
+
 static const char *TAG = "rules";
 
 static rule_t  s_rules[RULES_MAX];
 static int     s_count;
-static int64_t s_fire_us[RULES_MAX];   // last fire per rule (0 = never)
-
-// Continuous-state anchors (us). Exactly one is non-zero at a time.
-static int64_t s_present_since_us;     // when the current presence began (0 if absent now)
-static int64_t s_absent_since_us;      // when the current absence began  (0 if present now)
-
-// Guards s_rules / s_count / s_fire_us / the anchors, which are touched by eval_task and by
-// the web handlers (rules_get / rules_set / rules_presence_secs) on the httpd task. The
-// ESP32-S3 is dual-core, so this is a real cross-core race, not just a preemption window.
-// Blocking work (uart_link_press, MQTT publish) is always done OUTSIDE the lock.
+static bool    s_armed[RULES_MAX];     // edge-trigger: a rule re-arms when its condition ends
 static SemaphoreHandle_t s_lock;
 #define LOCK()   do { if (s_lock) xSemaphoreTake(s_lock, portMAX_DELAY); } while (0)
 #define UNLOCK() do { if (s_lock) xSemaphoreGive(s_lock); } while (0)
 
+// Debounced presence + continuity anchors (exactly one anchor non-zero while a sample is held).
+static volatile bool s_present;
+static int64_t s_present_since_us;
+static int64_t s_absent_since_us;
+
+static bool   valid_target(const char *t) { ac_mode_t m; bool on; return ac_mode_from_ha(t, &m, &on); }
+
 static void eval_task(void *arg)
 {
-    bool prev = false;
-    bool have_sample = false;   // false until the sensor has produced a valid frame (this task only)
+    bool have = false;                 // have a valid (alive) sample yet (this task only)
+    int64_t pending_since = 0;         // when the raw signal started differing from debounced
+
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(1000));
         int64_t now = esp_timer_get_time();
-        bool alive   = ld2410_alive();
-        bool present = alive && ld2410_present();
+        bool alive = ld2410_alive();
+        bool raw   = alive && ld2410_present();
 
-        // Decide everything under the lock; defer the blocking work (MQTT + button presses)
-        // until after we release it.
-        int   pres_pub = -1;            // -1 none, 0 mark unavailable, 1 publish state
-        bool  pres_state = false;
-        char  to_press[RULES_MAX][RULE_ACTION_LEN];
-        int   npress = 0;
+        // All shared state (s_present, the anchors, s_armed, s_rules) is touched under the lock;
+        // the blocking work (MQTT publish, ac_cmd) is deferred until after we release it.
+        int  pres_pub = -1;            // -1 none, 0 mark unavailable, 1 publish `raw`
+        char to_apply[RULES_MAX][RULE_TARGET_LEN];
+        int  napply = 0;
+        bool ready = uart_link_ready();   // only fire (and disarm) when the AC is reachable
 
         LOCK();
-        if (!alive) {
-            // A missing/dead LD2410 reads present=false; that is NOT "empty room", so freeze
-            // automation while it's offline (otherwise absence rules fire on boot/wiring fault).
-            if (have_sample) pres_pub = 0;
-            have_sample = false; prev = false;
-            s_present_since_us = 0; s_absent_since_us = 0;
-        } else if (!have_sample) {
-            // first valid sample (boot or sensor re-appeared): seed the anchor at *now* and skip
-            // firing this tick so durations are measured from a known-good signal.
-            if (present) s_present_since_us = now; else s_absent_since_us = now;
-            pres_pub = 1; pres_state = present;
-            have_sample = true; prev = present;
+        if (!alive) {                  // sensor offline: freeze automation, re-arm everything
+            if (have) pres_pub = 0;
+            have = false; pending_since = 0;
+            s_present = false; s_present_since_us = 0; s_absent_since_us = 0;
+            for (int i = 0; i < s_count; i++) s_armed[i] = true;
         } else {
-            if (present && !prev) { s_present_since_us = now; s_absent_since_us = 0;
-                                    pres_pub = 1; pres_state = true; }
-            if (!present && prev) { s_absent_since_us = now; s_present_since_us = 0;
-                                    pres_pub = 1; pres_state = false; }
-            prev = present;
-
+            if (!have) {               // first sample after boot/recovery: adopt immediately
+                s_present = raw; pending_since = 0;
+                if (raw) { s_present_since_us = now; s_absent_since_us = 0; }
+                else     { s_absent_since_us = now; s_present_since_us = 0; }
+                have = true; pres_pub = 1;
+                for (int i = 0; i < s_count; i++) s_armed[i] = true;
+            } else if (raw == s_present) {
+                pending_since = 0;     // stable
+            } else {
+                if (pending_since == 0) pending_since = now;
+                if (now - pending_since >= DEBOUNCE_US) {     // accept the debounced change
+                    int64_t began = pending_since;
+                    s_present = raw; pending_since = 0;
+                    if (raw) { s_present_since_us = began; s_absent_since_us = 0; }
+                    else     { s_absent_since_us = began; s_present_since_us = 0; }
+                    pres_pub = 1;
+                }
+            }
             for (int i = 0; i < s_count; i++) {
-                rule_t *r = &s_rules[i];
-                if (!r->enabled) continue;
-                bool match    = (r->cond == RULE_COND_PRESENCE) ? present : !present;
-                int64_t anchor = (r->cond == RULE_COND_PRESENCE) ? s_present_since_us
-                                                                 : s_absent_since_us;
-                if (!match || anchor == 0) continue;   // anchor==0 guard: never use a stale timer
-                if (now - anchor < (int64_t)r->duration_s * 1000000) continue;
-                if (s_fire_us[i] && (now - s_fire_us[i]) < (int64_t)r->cooldown_s * 1000000) continue;
-                s_fire_us[i] = now;                    // stamp now; the press happens after unlock
-                strlcpy(to_press[npress++], r->action, RULE_ACTION_LEN);
+                if (!s_rules[i].enabled) continue;
+                bool active = (s_rules[i].cond == RULE_COND_PRESENCE) ? s_present : !s_present;
+                if (!active) { s_armed[i] = true; continue; }  // re-arm when condition ends
+                int64_t anchor = (s_rules[i].cond == RULE_COND_PRESENCE) ? s_present_since_us
+                                                                         : s_absent_since_us;
+                if (anchor == 0 || !s_armed[i]) continue;
+                if (now - anchor < (int64_t)s_rules[i].duration_s * 1000000) continue;
+                if (!ready) continue;                          // AC unreachable: stay armed, fire later
+                s_armed[i] = false;                            // edge-trigger: fire once
+                strlcpy(to_apply[napply++], s_rules[i].target, RULE_TARGET_LEN);
             }
         }
         UNLOCK();
 
-        // ---- blocking work, outside the lock ----
         if (pres_pub == 0)      mqtt_ha_presence_unavailable();
-        else if (pres_pub == 1) mqtt_ha_publish_presence(pres_state);
-        for (int i = 0; i < npress; i++)
-            if (uart_link_press(to_press[i]))
-                ESP_LOGI(TAG, "rule fired: press %s", to_press[i]);
+        else if (pres_pub == 1) mqtt_ha_publish_presence(raw);
+        for (int i = 0; i < napply; i++) {
+            ac_cmd_set_mode_ha(to_apply[i]);                   // idempotent: no-op if already there
+            ESP_LOGI(TAG, "rule fired -> AC target %s", to_apply[i]);
+        }
     }
 }
 
@@ -100,16 +110,14 @@ void rules_load(void)
     if (!s_lock) s_lock = xSemaphoreCreateMutex();
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READONLY, &h) == ESP_OK) {
-        uint8_t ver = 0;
-        size_t sz = sizeof(s_rules);
-        // Only trust the blob if it was written by this rule_t layout and is an exact multiple
-        // of the struct size — otherwise ignore it (degrade to 0 rules, never misdecode).
+        uint8_t ver = 0; size_t sz = sizeof(s_rules);
         if (nvs_get_u8(h, NVS_VER_KEY, &ver) == ESP_OK && ver == RULES_VER &&
             nvs_get_blob(h, NVS_KEY, s_rules, &sz) == ESP_OK && (sz % sizeof(rule_t)) == 0)
             s_count = (int)(sz / sizeof(rule_t));
         nvs_close(h);
     }
     if (s_count < 0 || s_count > RULES_MAX) s_count = 0;
+    for (int i = 0; i < RULES_MAX; i++) s_armed[i] = true;
     ESP_LOGI(TAG, "%d rule(s) loaded", s_count);
     xTaskCreate(eval_task, "rules", 3072, NULL, 4, NULL);
 }
@@ -127,46 +135,34 @@ bool rules_set(const rule_t *in, int count)
 {
     if (count < 0) count = 0;
     if (count > RULES_MAX) count = RULES_MAX;
-
-    // Validate + normalise into a local copy first; never mutate the caller's buffer.
-    rule_t v[RULES_MAX];
+    // Validate EVERY rule's target (an enabled rule must name a mode; a disabled one may be empty
+    // but never arbitrary text — it is echoed verbatim into the /api/rules JSON).
     for (int i = 0; i < count; i++) {
-        v[i] = in[i];
-        // Validate the action for EVERY rule. An enabled rule must name a valid button; a
-        // disabled one may be empty but never arbitrary text — its action is echoed verbatim
-        // into the /api/rules JSON, so a stray quote/backslash would corrupt that response.
-        bool ok_btn = uart_link_valid_btn(v[i].action);   // false for "" too
-        if (v[i].enabled ? !ok_btn : (v[i].action[0] && !ok_btn)) {
-            ESP_LOGW(TAG, "rejecting rules: rule %d has an invalid action", i);
+        bool ok = valid_target(in[i].target);   // false for "" too
+        if (in[i].enabled ? !ok : (in[i].target[0] && !ok)) {
+            ESP_LOGW(TAG, "rejecting rules: rule %d target '%s' is not a valid AC mode", i, in[i].target);
             return false;
         }
-        if (v[i].enabled && v[i].cooldown_s < RULE_MIN_COOLDOWN_S)
-            v[i].cooldown_s = RULE_MIN_COOLDOWN_S;   // anti-spam floor
     }
 
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return false;
-    // Bail on the first failing write so we never report success (or update RAM) for a save
-    // that won't survive a reboot — e.g. a full NVS partition.
     esp_err_t e = nvs_set_u8(h, NVS_VER_KEY, RULES_VER);
-    if (e == ESP_OK) e = nvs_set_blob(h, NVS_KEY, v, count * sizeof(rule_t));
+    if (e == ESP_OK) e = nvs_set_blob(h, NVS_KEY, in, count * sizeof(rule_t));
     if (e == ESP_OK) e = nvs_commit(h);
     nvs_close(h);
-    if (e != ESP_OK) {
-        ESP_LOGW(TAG, "rules NVS save failed: %s", esp_err_to_name(e));
-        return false;
-    }
+    if (e != ESP_OK) { ESP_LOGW(TAG, "rules NVS save failed: %s", esp_err_to_name(e)); return false; }
 
     LOCK();
-    memcpy(s_rules, v, count * sizeof(rule_t));
+    memcpy(s_rules, in, count * sizeof(rule_t));
     s_count = count;
-    memset(s_fire_us, 0, sizeof(s_fire_us));   // a fresh rule set starts with no cooldown debt
+    for (int i = 0; i < RULES_MAX; i++) s_armed[i] = true;   // fresh set: arm all
     UNLOCK();
     ESP_LOGI(TAG, "%d rule(s) saved", count);
     return true;
 }
 
-bool rules_presence(void) { return ld2410_present(); }
+bool rules_presence(void) { return s_present; }
 
 uint32_t rules_presence_secs(void)
 {
