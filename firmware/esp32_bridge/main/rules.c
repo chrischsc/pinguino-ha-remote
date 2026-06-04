@@ -39,60 +39,62 @@ static bool   valid_target(const char *t) { ac_mode_t m; bool on; return ac_mode
 
 static void eval_task(void *arg)
 {
-    bool have = false;                 // have a valid (alive) sample yet
+    bool have = false;                 // have a valid (alive) sample yet (this task only)
     int64_t pending_since = 0;         // when the raw signal started differing from debounced
 
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(1000));
         int64_t now = esp_timer_get_time();
+        bool alive = ld2410_alive();
+        bool raw   = alive && ld2410_present();
 
-        if (!ld2410_alive()) {
-            // Sensor offline: freeze automation, re-arm everything, mark HA unavailable.
-            if (have) mqtt_ha_presence_unavailable();
-            have = false; pending_since = 0;
-            s_present = false; s_present_since_us = 0; s_absent_since_us = 0;
-            LOCK(); for (int i = 0; i < s_count; i++) s_armed[i] = true; UNLOCK();
-            continue;
-        }
-
-        bool raw = ld2410_present();
-        if (!have) {                   // first sample after boot/recovery: adopt immediately
-            s_present = raw; pending_since = 0;
-            if (raw) { s_present_since_us = now; s_absent_since_us = 0; }
-            else     { s_absent_since_us = now; s_present_since_us = 0; }
-            have = true;
-            LOCK(); for (int i = 0; i < s_count; i++) s_armed[i] = true; UNLOCK();
-            mqtt_ha_publish_presence(raw);
-        } else if (raw == s_present) {
-            pending_since = 0;         // stable, nothing pending
-        } else {
-            if (pending_since == 0) pending_since = now;
-            if (now - pending_since >= DEBOUNCE_US) {        // accept the debounced change
-                int64_t began = pending_since;
-                s_present = raw; pending_since = 0;
-                if (raw) { s_present_since_us = began; s_absent_since_us = 0; }
-                else     { s_absent_since_us = began; s_present_since_us = 0; }
-                mqtt_ha_publish_presence(raw);
-            }
-        }
-
-        // Decide which rules fire this tick (under the lock), then drive the AC outside it.
+        // All shared state (s_present, the anchors, s_armed, s_rules) is touched under the lock;
+        // the blocking work (MQTT publish, ac_cmd) is deferred until after we release it.
+        int  pres_pub = -1;            // -1 none, 0 mark unavailable, 1 publish `raw`
         char to_apply[RULES_MAX][RULE_TARGET_LEN];
         int  napply = 0;
+
         LOCK();
-        for (int i = 0; i < s_count; i++) {
-            if (!s_rules[i].enabled) continue;
-            bool active = (s_rules[i].cond == RULE_COND_PRESENCE) ? s_present : !s_present;
-            if (!active) { s_armed[i] = true; continue; }      // re-arm when condition ends
-            int64_t anchor = (s_rules[i].cond == RULE_COND_PRESENCE) ? s_present_since_us
-                                                                     : s_absent_since_us;
-            if (anchor == 0 || !s_armed[i]) continue;
-            if (now - anchor < (int64_t)s_rules[i].duration_s * 1000000) continue;
-            s_armed[i] = false;                                // edge-trigger: fire once
-            strlcpy(to_apply[napply++], s_rules[i].target, RULE_TARGET_LEN);
+        if (!alive) {                  // sensor offline: freeze automation, re-arm everything
+            if (have) pres_pub = 0;
+            have = false; pending_since = 0;
+            s_present = false; s_present_since_us = 0; s_absent_since_us = 0;
+            for (int i = 0; i < s_count; i++) s_armed[i] = true;
+        } else {
+            if (!have) {               // first sample after boot/recovery: adopt immediately
+                s_present = raw; pending_since = 0;
+                if (raw) { s_present_since_us = now; s_absent_since_us = 0; }
+                else     { s_absent_since_us = now; s_present_since_us = 0; }
+                have = true; pres_pub = 1;
+                for (int i = 0; i < s_count; i++) s_armed[i] = true;
+            } else if (raw == s_present) {
+                pending_since = 0;     // stable
+            } else {
+                if (pending_since == 0) pending_since = now;
+                if (now - pending_since >= DEBOUNCE_US) {     // accept the debounced change
+                    int64_t began = pending_since;
+                    s_present = raw; pending_since = 0;
+                    if (raw) { s_present_since_us = began; s_absent_since_us = 0; }
+                    else     { s_absent_since_us = began; s_present_since_us = 0; }
+                    pres_pub = 1;
+                }
+            }
+            for (int i = 0; i < s_count; i++) {
+                if (!s_rules[i].enabled) continue;
+                bool active = (s_rules[i].cond == RULE_COND_PRESENCE) ? s_present : !s_present;
+                if (!active) { s_armed[i] = true; continue; }  // re-arm when condition ends
+                int64_t anchor = (s_rules[i].cond == RULE_COND_PRESENCE) ? s_present_since_us
+                                                                         : s_absent_since_us;
+                if (anchor == 0 || !s_armed[i]) continue;
+                if (now - anchor < (int64_t)s_rules[i].duration_s * 1000000) continue;
+                s_armed[i] = false;                            // edge-trigger: fire once
+                strlcpy(to_apply[napply++], s_rules[i].target, RULE_TARGET_LEN);
+            }
         }
         UNLOCK();
 
+        if (pres_pub == 0)      mqtt_ha_presence_unavailable();
+        else if (pres_pub == 1) mqtt_ha_publish_presence(raw);
         for (int i = 0; i < napply; i++) {
             ac_cmd_set_mode_ha(to_apply[i]);                   // idempotent: no-op if already there
             ESP_LOGI(TAG, "rule fired -> AC target %s", to_apply[i]);
@@ -130,11 +132,15 @@ bool rules_set(const rule_t *in, int count)
 {
     if (count < 0) count = 0;
     if (count > RULES_MAX) count = RULES_MAX;
-    for (int i = 0; i < count; i++)
-        if (in[i].enabled && !valid_target(in[i].target)) {
+    // Validate EVERY rule's target (an enabled rule must name a mode; a disabled one may be empty
+    // but never arbitrary text — it is echoed verbatim into the /api/rules JSON).
+    for (int i = 0; i < count; i++) {
+        bool ok = valid_target(in[i].target);   // false for "" too
+        if (in[i].enabled ? !ok : (in[i].target[0] && !ok)) {
             ESP_LOGW(TAG, "rejecting rules: rule %d target '%s' is not a valid AC mode", i, in[i].target);
             return false;
         }
+    }
 
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return false;
