@@ -8,21 +8,28 @@
 
 #define NVS_NS  "acstate"
 #define NVS_KEY "st"
-#define NVS_VER 2          // bumped: timer_h -> timer_on/timer_halfh
+#define NVS_VER 3          // bumped: timer_on -> timer_state (3-state)
 
-// After pressing timer (or up/down while editing it), up/down adjust the timer for this long;
-// afterwards they return to adjusting temperature, mirroring the device's brief edit mode.
-#define TIMER_EDIT_US (5 * 1000000)
+// In EDIT, this much idle (no timer/up/down) confirms the value and starts the timer (RUN).
+#define TIMER_EDIT_US (3 * 1000000)
 
 static const char *TAG = "acstate";
 
 static ac_state_t s = {
     .on = false, .mode = AC_MODE_COOL, .temp_c = AC_TEMP_DEF, .fan = AC_FAN_AUTO,
     .silent = false, .eco = false, .swing = false,
-    .timer_on = false, .timer_halfh = TIMER_DEF_HALFH,
+    .timer_state = TIMER_OFF, .timer_halfh = TIMER_DEF_HALFH,
 };
 static int64_t s_timer_edit_until_us;
 static SemaphoreHandle_t s_lock;
+
+// EDIT auto-confirms to RUN after the idle window. Evaluated lazily (on apply / read) since the
+// model only ticks on button presses. Caller must hold the lock.
+static void timer_settle(int64_t now)
+{
+    if (s.timer_state == TIMER_EDIT && now >= s_timer_edit_until_us)
+        s.timer_state = TIMER_RUN;
+}
 static ac_state_cb_t     s_cb;
 #define LOCK()   do { if (s_lock) xSemaphoreTake(s_lock, portMAX_DELAY); } while (0)
 #define UNLOCK() do { if (s_lock) xSemaphoreGive(s_lock); } while (0)
@@ -75,23 +82,29 @@ void ac_state_init(void)
 }
 
 const ac_state_t *ac_state_get(void) { return &s; }
-void ac_state_get_copy(ac_state_t *out) { LOCK(); *out = s; UNLOCK(); }
+void ac_state_get_copy(ac_state_t *out) { LOCK(); timer_settle(esp_timer_get_time()); *out = s; UNLOCK(); }
 
 bool ac_state_apply(const char *btn)
 {
     LOCK();
     ac_state_t before = s;
     int64_t now = esp_timer_get_time();
-    bool timer_edit = now < s_timer_edit_until_us;   // up/down adjust the timer, not temp
+    timer_settle(now);                                 // resolve a pending EDIT->RUN first
+    bool editing = (s.timer_state == TIMER_EDIT);      // in EDIT, up/down adjust the timer
 
     if (!strcmp(btn, "power")) {
         s.on = !s.on;
-        s_timer_edit_until_us = 0;
     } else if (!strcmp(btn, "timer")) {
-        // Toggle the timer; switching it on starts at 6.0 h and opens the edit window.
-        if (s.timer_on) { s.timer_on = false; s_timer_edit_until_us = 0; }
-        else { s.timer_on = true; s.timer_halfh = TIMER_DEF_HALFH; s_timer_edit_until_us = now + TIMER_EDIT_US; }
-    } else if (timer_edit && (!strcmp(btn, "up") || !strcmp(btn, "down"))) {
+        if (s.timer_state == TIMER_OFF) {              // activate: show settings at 6.0 h
+            s.timer_state = TIMER_EDIT; s.timer_halfh = TIMER_DEF_HALFH;
+            s_timer_edit_until_us = now + TIMER_EDIT_US;
+        } else if (s.timer_state == TIMER_EDIT) {      // second tap while editing: disable
+            s.timer_state = TIMER_OFF;
+        } else {                                       // RUN: reopen settings at the last value
+            s.timer_state = TIMER_EDIT;
+            s_timer_edit_until_us = now + TIMER_EDIT_US;
+        }
+    } else if (editing && (!strcmp(btn, "up") || !strcmp(btn, "down"))) {
         // 0.5 h steps from 0.5 to 9.5, then 1 h steps from 10 to 24 (half-hours: 20 == 10 h).
         int hh = s.timer_halfh + (!strcmp(btn, "up") ? (s.timer_halfh < 20 ? 1 : 2)
                                                       : (s.timer_halfh > 20 ? -2 : -1));

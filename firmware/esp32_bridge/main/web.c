@@ -77,13 +77,14 @@ static esp_err_t h_status(httpd_req_t *req)
     float t = 0, h = 0, p = 0; bool bme = bme280_get(&t, &h, &p);
     ac_state_t ac; ac_state_get_copy(&ac);
     const char *acmode = ac.mode == AC_MODE_DRY ? "dry" : ac.mode == AC_MODE_FAN ? "fan" : "cool";
+    const char *actimer = ac.timer_state == TIMER_RUN ? "run" : ac.timer_state == TIMER_EDIT ? "edit" : "off";
     char buf[700];
     snprintf(buf, sizeof(buf),
         "{\"state\":\"%s\",\"ssid\":\"%s\",\"ip\":\"%s\",\"ap\":\"%s\",\"has_creds\":%s,\"nrf\":\"%s\","
         "\"mqtt\":%s,\"mqtt_host\":\"%s\",\"bme\":%s,\"temp\":%.2f,\"hum\":%.1f,\"hpa\":%.1f,"
         "\"ld\":%s,\"presence\":%s,\"presence_s\":%lu,\"mute_s\":%d,"
         "\"ac\":{\"on\":%s,\"mode\":\"%s\",\"temp\":%d,\"fan\":\"%s\",\"silent\":%s,\"eco\":%s,\"swing\":%s,"
-        "\"timer_on\":%s,\"timer_h\":%.1f}}",
+        "\"timer\":\"%s\",\"timer_h\":%.1f}}",
         wifi_mgr_state_str(), wifi_mgr_ssid(), wifi_mgr_ip(), wifi_mgr_ap_ssid(),
         wifi_mgr_has_creds() ? "true" : "false", uart_link_status(),
         mqtt_ha_connected() ? "true" : "false", mqtt_ha_host(),
@@ -92,7 +93,7 @@ static esp_err_t h_status(httpd_req_t *req)
         (unsigned long)rules_presence_secs(), uart_link_mute_secs(),
         ac.on ? "true" : "false", acmode, ac.temp_c, ac_fan_str(ac.fan),
         ac.silent ? "true" : "false", ac.eco ? "true" : "false", ac.swing ? "true" : "false",
-        ac.timer_on ? "true" : "false", ac.timer_halfh / 2.0);
+        actimer, ac.timer_halfh / 2.0);
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, buf);
 }

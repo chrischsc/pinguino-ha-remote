@@ -20,9 +20,14 @@ typedef enum { AC_FAN_MIN  = 0, AC_FAN_MED = 1, AC_FAN_MAX = 2, AC_FAN_AUTO = 3 
 #define AC_TEMP_MAX   32
 #define AC_TEMP_DEF   24
 
-// Timer (OBSERVED): pressing timer toggles it; switching on starts at 6.0 h. While editing,
-// up/down step 0.5 h from 0.5 to 9.5, then 1 h from 10 to 24. Duration stored in half-hours.
-#define TIMER_DEF_HALFH 12   // 6.0 h
+// Timer (OBSERVED) — a 3-state machine, not a toggle:
+//   OFF  --tap-->  EDIT (visible, value editable)  --~3s idle-->  RUN (timer counting)
+//   RUN  --tap-->  EDIT (reopen at last value)      EDIT --tap--> OFF (disable)
+// In EDIT, up/down step 0.5 h from 0.5 to 9.5, then 1 h from 10 to 24 (half-hours).
+#define TIMER_OFF       0
+#define TIMER_EDIT      1
+#define TIMER_RUN       2
+#define TIMER_DEF_HALFH 12   // 6.0 h (value when activated from OFF)
 #define TIMER_MIN_HALFH 1    // 0.5 h
 #define TIMER_MAX_HALFH 48   // 24 h
 
@@ -34,7 +39,7 @@ typedef struct {
     bool      silent;      // COOL only
     bool      eco;         // COOL only (ECO REAL FEEL)
     bool      swing;       // any mode (flap oscillation)
-    bool      timer_on;    // a delayed on/off is scheduled
+    uint8_t   timer_state; // TIMER_OFF / TIMER_EDIT / TIMER_RUN
     uint8_t   timer_halfh; // timer duration in half-hours (see TIMER_* above)
 } ac_state_t;
 

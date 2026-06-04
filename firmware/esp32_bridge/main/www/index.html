@@ -388,14 +388,16 @@ async function refresh(){
       const litBtn = (b,cls,on)=>{ const el=document.querySelector('[data-b="'+b+'"]'); if (el) el.classList.toggle(cls,!!on); };
       litBtn('power','on', a.on);
       litBtn('eco','lit', a.on&&a.eco); litBtn('silent','lit', a.on&&a.silent); litBtn('flap','lit', a.on&&a.swing);
-      litBtn('timer','lit', a.timer_on);
+      litBtn('timer','lit', a.timer !== 'off');
       $('#acModeIcon').innerHTML = a.on ? (MODE_SVG[a.mode]||'') : '';
       $('#acSet').textContent = a.on ? (a.mode==='cool' ? a.temp : '··') : 'OFF';
       $('#acFanInd').innerHTML = a.on ? fanBars(a.fan) : '';
       const ind = (id,on)=>$('#'+id).classList.toggle('on',!!on);
       ind('indEco', a.on&&a.eco); ind('indSilent', a.on&&a.silent); ind('indSwing', a.on&&a.swing);
       const t = $('#indTimer');
-      if (t) { t.classList.toggle('on', a.timer_on); t.textContent = a.timer_on ? '⏱ '+a.timer_h.toFixed(1)+'h' : '⏱'; }
+      if (t) { const lit = a.timer !== 'off';
+        t.classList.toggle('on', lit);
+        t.textContent = lit ? '⏱ '+a.timer_h.toFixed(1)+'h'+(a.timer==='edit'?' ✎':'') : '⏱'; }
     }
   } catch(e){}
 }
