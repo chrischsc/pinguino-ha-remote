@@ -115,7 +115,7 @@ static void publish_discovery(void)
         "\"modes\":[\"off\",\"cool\",\"dry\",\"fan_only\"],"
         "\"mode_command_topic\":\"" AC_BASE "mode/set\",\"mode_state_topic\":\"" AC_BASE "mode\","
         "\"temperature_command_topic\":\"" AC_BASE "temp/set\",\"temperature_state_topic\":\"" AC_BASE "temp\","
-        "\"min_temp\":%d,\"max_temp\":%d,\"temp_step\":1,"
+        "\"temperature_unit\":\"C\",\"min_temp\":%d,\"max_temp\":%d,\"temp_step\":1,"
         "\"fan_modes\":[\"min\",\"medium\",\"max\",\"auto\"],"
         "\"fan_mode_command_topic\":\"" AC_BASE "fan/set\",\"fan_mode_state_topic\":\"" AC_BASE "fan\","
         "\"availability_topic\":\"" AVTY_TOPIC "\","
