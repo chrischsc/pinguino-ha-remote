@@ -40,6 +40,32 @@
   .ac-state { font-size:14px; color:var(--fg); margin:4px 0 10px; }
   .ac-state .off { color:var(--mut); }
 
+  /* ---- lit buttons reflecting modeled AC state ---- */
+  .circle-button.lit, .half.lit {
+    background:rgba(56,189,248,.26)!important; border-color:var(--cool)!important;
+    box-shadow:0 0 0 .4cqw rgba(56,189,248,.5), inset 0 0 2.6cqw rgba(56,189,248,.35); }
+  .power-button.on {
+    background:rgba(52,211,153,.22); border-color:#34d399;
+    box-shadow:0 0 0 .4cqw rgba(52,211,153,.5), inset 0 0 2.6cqw rgba(52,211,153,.3); }
+  /* ---- AC status "display" inside the remote screen ---- */
+  .ac-top { display:flex; align-items:center; gap:3cqw; }
+  .ac-mode { display:inline-flex; font-size:clamp(16px,6cqw,46px); color:#bfeaff;
+             filter:drop-shadow(0 0 6px rgba(56,189,248,.5)); min-width:1.2em; }
+  .ac-set b { font-size:clamp(18px,6.6cqw,54px); font-weight:600; color:#e8f9ff;
+              text-shadow:0 0 10px rgba(56,189,248,.45); font-variant-numeric:tabular-nums; }
+  .ac-set small { font-size:clamp(8px,2cqw,15px); color:#7fb8cf; }
+  .ac-fan { display:inline-flex; align-items:flex-end; gap:.5cqw; margin-left:auto; height:7cqw; }
+  .ac-fan i { width:1.4cqw; background:#2b6b86; border-radius:.4cqw; }
+  .ac-fan i.on { background:#34d399; box-shadow:0 0 5px rgba(52,211,153,.5); }
+  .ac-fan .fan-auto { font-size:clamp(8px,2.4cqw,16px); color:#34d399; font-weight:700; align-self:center; }
+  .ac-row2 { display:flex; align-items:center; gap:2.4cqw; font-size:clamp(8px,2cqw,14px); }
+  .ac-row2 .ind { color:#46525e; letter-spacing:.06em; font-weight:700; transition:.2s; }
+  .ac-row2 .ind.on { color:#34d399; text-shadow:0 0 8px rgba(52,211,153,.6); }
+  .ac-row2 .amb { margin-left:auto; color:#7fb8cf; font-weight:400; }
+  .ac-row2 .amb b { color:#cfeffb; }
+  .sync-banner { margin-top:10px; padding:10px 12px; border-radius:8px; font-size:13px;
+    background:rgba(251,191,36,.12); border:1px solid rgba(251,191,36,.45); color:#fde68a; }
+
   /* ---- remote panel (HTML/CSS/SVG, scales with its container) ---- */
   .remote { position:relative; container-type:inline-size; width:100%; aspect-ratio:1.42 / 1;
     border-radius:6cqw; overflow:hidden; color:var(--ink);
@@ -187,12 +213,16 @@
       </section>
 
       <div class="screen">
-        <div class="metrics">
-          <div class="metric"><b id="scrT">--.-</b><small>°C</small></div>
-          <div class="sep"></div>
-          <div class="metric"><b id="scrH">--</b><small>%RH</small></div>
-          <div class="sep"></div>
-          <div class="metric"><b id="scrP">----</b><small>hPa</small></div>
+        <div class="ac-top">
+          <span class="ac-mode" id="acModeIcon" title="Mode"></span>
+          <span class="ac-set"><b id="acSet">OFF</b><small>°C</small></span>
+          <span class="ac-fan" id="acFanInd" title="Ventilation"></span>
+        </div>
+        <div class="ac-row2">
+          <span class="ind" id="indEco">ECO</span>
+          <span class="ind" id="indSilent">SILENT</span>
+          <span class="ind" id="indSwing">SWING</span>
+          <span class="amb">amb <b id="scrT">--.-</b>° <b id="scrH">--</b>% <b id="scrP">----</b></span>
         </div>
         <div class="statusbar">
           <div class="grp"><span class="sdot" id="dWifi"></span>Wi-Fi</div>
@@ -202,7 +232,17 @@
       </div>
 
     </div>
-    <p class="small" style="margin-top:12px">Touche → émulateur nRF via UART · l'écran reflète le BME280 et l'état du pont.</p>
+
+    <div id="syncBanner" class="sync-banner" style="display:none">
+      ⟳ Mode synchro <b id="syncCount">30</b> s — appuyez sur les touches pour reproduire l'état
+      <b>affiché par le climatiseur</b>. Aucun signal n'est envoyé.
+    </div>
+    <div style="display:flex; gap:8px; margin-top:10px">
+      <button class="ui" onclick="syncWindow()">⟳ Synchroniser (30 s)</button>
+    </div>
+    <p class="small" style="margin-top:8px">L'écran reflète l'état <b>modélisé</b> du climatiseur
+      (boucle ouverte). En cas de dérive, lancez « Synchroniser » et reproduisez sur les touches
+      l'état réellement affiché par le climatiseur — rien n'est envoyé pendant ces 30 s.</p>
   </div>
 
   <div class="card" id="acCard">
@@ -227,14 +267,10 @@
       <label><input type="checkbox" id="acEco" onchange="acCmd('eco='+(this.checked?1:0))"> Eco</label>
       <label><input type="checkbox" id="acSilent" onchange="acCmd('silent='+(this.checked?1:0))"> Silent</label>
     </div>
-    <p class="small">Modèle en boucle ouverte : il reflète les touches envoyées. Eco/Silent et le réglage
-      de température ne sont valides qu'en mode Froid ; en Déshu. le ventilateur est automatique.</p>
-    <details>
-      <summary class="small">Synchroniser l'état réel (après usage de la télécommande physique)</summary>
-      <p class="small">Réglez ci-dessus l'état tel qu'affiché par le climatiseur puis cliquez —
-        <b>aucune touche n'est envoyée</b>, on corrige seulement le modèle.</p>
-      <button class="ui" onclick="acSync()">Définir comme état actuel</button>
-    </details>
+    <p class="small">Ces commandes <b>pilotent</b> le climatiseur (séquence de touches espacées
+      ~1,8 s). Eco/Silent et la température ne sont valides qu'en mode Froid ; en Déshu. le
+      ventilateur est automatique. Pour corriger une dérive sans rien envoyer, utilisez
+      « Synchroniser » sur la télécommande ci-dessus.</p>
     <p class="small" id="acMsg"></p>
   </div>
 
@@ -301,7 +337,35 @@ const $ = s => document.querySelector(s);
 async function press(b, el){
   el.classList.add('flash'); setTimeout(()=>el.classList.remove('flash'), 200);
   try { await fetch('/api/press', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'btn='+b}); } catch(e){}
+  setTimeout(refresh, 350);   // reflect the modeled state quickly (esp. during a sync window)
 }
+
+// ---- AC display helpers (manual icons) + sync window ----
+const MODE_SVG = {
+  cool:'<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M3.5 7l17 10M20.5 7l-17 10"/><path d="M9 4l3 2 3-2M9 20l3-2 3 2M4 10l1 3-1 3M20 10l-1 3 1 3"/></svg>',
+  dry:'<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3c3.6 4.6 6 7.7 6 10.6A6 6 0 0 1 6 13.6C6 10.7 8.4 7.6 12 3z"/></svg>',
+  fan:'<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M12 10c-3-2.6-3-7 0-7s3 4.4 0 7m2 2c2.6-3 7-3 7 0s-4.4 3-7 0m-2 2c3 2.6 3 7 0 7s-3-4.4 0-7m-2-2c-2.6 3-7 3-7 0s4.4-3 7 0"/></svg>',
+};
+function fanBars(fan){
+  if (fan==='auto') return '<span class="fan-auto">AUTO</span>';
+  const n = fan==='min'?1 : fan==='medium'?2 : 3;
+  let h=''; for (let i=1;i<=3;i++) h += '<i class="'+(i<=n?'on':'')+'" style="height:'+(2+i*1.7)+'cqw"></i>';
+  return h;
+}
+let syncEnd = 0;
+async function syncWindow(){
+  try { await fetch('/api/mute', {method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'s=30'}); } catch(e){}
+  syncEnd = Date.now() + 30000;
+  tickSync(); refresh();
+}
+function tickSync(){
+  const b = $('#syncBanner'); if (!b) return;
+  const rem = Math.max(0, Math.round((syncEnd - Date.now())/1000));
+  b.style.display = rem>0 ? 'block' : 'none';
+  if (rem>0) $('#syncCount').textContent = rem;
+}
+setInterval(tickSync, 1000);
 document.querySelectorAll('.key').forEach(el => el.onclick = () => press(el.dataset.b, el));
 
 async function pairing(unpair){
@@ -355,6 +419,16 @@ async function refresh(){
       setV('acFan', a.fan);
       if ($('#acTempV')) $('#acTempV').textContent = a.temp;
       setC('acSwing', a.swing); setC('acEco', a.eco); setC('acSilent', a.silent);
+
+      // remote: light up 2-state buttons + render the AC "display" screen
+      const litBtn = (b,cls,on)=>{ const el=document.querySelector('[data-b="'+b+'"]'); if (el) el.classList.toggle(cls,!!on); };
+      litBtn('power','on', a.on);
+      litBtn('eco','lit', a.on&&a.eco); litBtn('silent','lit', a.on&&a.silent); litBtn('flap','lit', a.on&&a.swing);
+      $('#acModeIcon').innerHTML = a.on ? (MODE_SVG[a.mode]||'') : '';
+      $('#acSet').textContent = a.on ? (a.mode==='cool' ? a.temp : '··') : 'OFF';
+      $('#acFanInd').innerHTML = a.on ? fanBars(a.fan) : '';
+      const ind = (id,on)=>$('#'+id).classList.toggle('on',!!on);
+      ind('indEco', a.on&&a.eco); ind('indSilent', a.on&&a.silent); ind('indSwing', a.on&&a.swing);
     }
   } catch(e){}
 }
@@ -472,21 +546,6 @@ async function acCmd(body){
   } catch(e){ $('#acMsg').textContent = 'Erreur.'; }
 }
 function acTemp(d){ acCmd('temp='+((parseInt($('#acTempV').textContent)||24)+d)); }
-async function acSync(){
-  const m = $('#acMode').value, on = m!=='off' ? 1 : 0;
-  let body = 'on='+on;
-  if (m!=='off') body += '&mode='+(m==='fan_only'?'fan':m);
-  body += '&temp='+(parseInt($('#acTempV').textContent)||24)
-        + '&fan='+$('#acFan').value
-        + '&swing='+($('#acSwing').checked?1:0)
-        + '&eco='+($('#acEco').checked?1:0)
-        + '&silent='+($('#acSilent').checked?1:0);
-  try {
-    await fetch('/api/acstate', {method:'POST',
-      headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
-    $('#acMsg').textContent = 'État synchronisé (aucune touche envoyée).'; setTimeout(refresh, 600);
-  } catch(e){ $('#acMsg').textContent = 'Erreur.'; }
-}
 
 loadPins();
 loadRules();

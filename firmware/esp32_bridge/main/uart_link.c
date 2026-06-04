@@ -67,13 +67,33 @@ bool uart_link_valid_btn(const char *btn)
     return false;
 }
 
+// Sync window: while active, presses still update the model but are NOT sent to the AC, so the
+// user can re-align the model to the AC's real display by pressing the remote without actuating.
+static int64_t s_mute_until_us;
+
+void uart_link_mute(int seconds)
+{
+    if (seconds < 0) seconds = 0;
+    s_mute_until_us = esp_timer_get_time() + (int64_t)seconds * 1000000;
+    ESP_LOGI(TAG, "sync window: muting sends for %ds (model-only presses)", seconds);
+}
+
+int uart_link_mute_secs(void)
+{
+    int64_t r = s_mute_until_us - esp_timer_get_time();
+    return r > 0 ? (int)(r / 1000000) + 1 : 0;
+}
+
 bool uart_link_press(const char *btn)
 {
     if (!uart_link_valid_btn(btn)) return false;
-    char line[32];
-    int n = snprintf(line, sizeof(line), "press %s\n", btn);
-    uart_write_bytes(LINK_UART, line, n);
-    ESP_LOGI(TAG, "-> nRF: press %s", btn);
+    bool muted = esp_timer_get_time() < s_mute_until_us;
+    if (!muted) {
+        char line[32];
+        int n = snprintf(line, sizeof(line), "press %s\n", btn);
+        uart_write_bytes(LINK_UART, line, n);
+    }
+    ESP_LOGI(TAG, "%s press %s", muted ? "(sync, model-only)" : "-> nRF:", btn);
     ac_state_apply(btn);   // fold the press into the open-loop AC model (web/MQTT/rules/cmd)
     return true;
 }

@@ -81,14 +81,14 @@ static esp_err_t h_status(httpd_req_t *req)
     snprintf(buf, sizeof(buf),
         "{\"state\":\"%s\",\"ssid\":\"%s\",\"ip\":\"%s\",\"ap\":\"%s\",\"has_creds\":%s,\"nrf\":\"%s\","
         "\"mqtt\":%s,\"mqtt_host\":\"%s\",\"bme\":%s,\"temp\":%.2f,\"hum\":%.1f,\"hpa\":%.1f,"
-        "\"ld\":%s,\"presence\":%s,\"presence_s\":%lu,"
+        "\"ld\":%s,\"presence\":%s,\"presence_s\":%lu,\"mute_s\":%d,"
         "\"ac\":{\"on\":%s,\"mode\":\"%s\",\"temp\":%d,\"fan\":\"%s\",\"silent\":%s,\"eco\":%s,\"swing\":%s}}",
         wifi_mgr_state_str(), wifi_mgr_ssid(), wifi_mgr_ip(), wifi_mgr_ap_ssid(),
         wifi_mgr_has_creds() ? "true" : "false", uart_link_status(),
         mqtt_ha_connected() ? "true" : "false", mqtt_ha_host(),
         bme ? "true" : "false", t, h, p,
         ld2410_alive() ? "true" : "false", rules_presence() ? "true" : "false",
-        (unsigned long)rules_presence_secs(),
+        (unsigned long)rules_presence_secs(), uart_link_mute_secs(),
         ac.on ? "true" : "false", acmode, ac.temp_c, ac_fan_str(ac.fan),
         ac.silent ? "true" : "false", ac.eco ? "true" : "false", ac.swing ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
@@ -304,6 +304,21 @@ static esp_err_t h_acstate(httpd_req_t *req)
     return httpd_resp_sendstr(req, "{\"ok\":true}");
 }
 
+// POST /api/mute — open a "sync window": presses update the model but aren't sent to the AC,
+// so the user can re-align the model to the real AC by pressing the remote. ?s=<secs>, default 30.
+static esp_err_t h_mute(httpd_req_t *req)
+{
+    char body[24] = ""; read_body(req, body, sizeof(body));
+    char v[8] = ""; int secs = 30;
+    if (form_get(body, "s", v, sizeof(v)) && v[0]) secs = atoi(v);
+    if (secs < 0) secs = 0;
+    if (secs > 300) secs = 300;
+    uart_link_mute(secs);
+    char out[32]; snprintf(out, sizeof(out), "{\"ok\":true,\"s\":%d}", secs);
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, out);
+}
+
 // POST /api/accmd — drive the AC toward a target via the press-sequence worker (one field per call).
 static esp_err_t h_accmd(httpd_req_t *req)
 {
@@ -328,7 +343,7 @@ static void reg(httpd_handle_t s, const char *uri, httpd_method_t m, esp_err_t (
 void web_start(void)
 {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 16;
+    cfg.max_uri_handlers = 24;
     cfg.lru_purge_enable = true;
     httpd_handle_t s = NULL;
     if (httpd_start(&s, &cfg) != ESP_OK) { ESP_LOGE(TAG, "httpd start failed"); return; }
@@ -347,5 +362,6 @@ void web_start(void)
     reg(s, "/api/rules", HTTP_POST, h_rules_save);
     reg(s, "/api/acstate", HTTP_POST, h_acstate);
     reg(s, "/api/accmd", HTTP_POST, h_accmd);
+    reg(s, "/api/mute", HTTP_POST, h_mute);
     ESP_LOGI(TAG, "web server up on :80");
 }
