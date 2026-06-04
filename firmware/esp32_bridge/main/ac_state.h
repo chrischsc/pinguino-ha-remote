@@ -20,15 +20,22 @@ typedef enum { AC_FAN_MIN  = 0, AC_FAN_MED = 1, AC_FAN_MAX = 2, AC_FAN_AUTO = 3 
 #define AC_TEMP_MAX   32
 #define AC_TEMP_DEF   24
 
+// Timer (OBSERVED): pressing timer toggles it; switching on starts at 6.0 h. While editing,
+// up/down step 0.5 h from 0.5 to 9.5, then 1 h from 10 to 24. Duration stored in half-hours.
+#define TIMER_DEF_HALFH 12   // 6.0 h
+#define TIMER_MIN_HALFH 1    // 0.5 h
+#define TIMER_MAX_HALFH 48   // 24 h
+
 typedef struct {
-    bool      on;        // true = running, false = standby (power resumes the last mode)
-    ac_mode_t mode;      // cool / dry / fan
-    uint8_t   temp_c;    // setpoint, meaningful in COOL only
-    ac_fan_t  fan;       // fan speed
-    bool      silent;    // COOL only
-    bool      eco;       // COOL only (ECO REAL FEEL)
-    bool      swing;     // any mode (flap oscillation)
-    uint8_t   timer_h;   // 0 = off; hours. NOTE: not fully modeled in v1 (see ac_state.c)
+    bool      on;          // true = running, false = standby (power resumes the last mode)
+    ac_mode_t mode;        // cool / dry / fan
+    uint8_t   temp_c;      // setpoint, meaningful in COOL only
+    ac_fan_t  fan;         // fan speed
+    bool      silent;      // COOL only
+    bool      eco;         // COOL only (ECO REAL FEEL)
+    bool      swing;       // any mode (flap oscillation)
+    bool      timer_on;    // a delayed on/off is scheduled
+    uint8_t   timer_halfh; // timer duration in half-hours (see TIMER_* above)
 } ac_state_t;
 
 void               ac_state_init(void);              // load from NVS (or defaults)

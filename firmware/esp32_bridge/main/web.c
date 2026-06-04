@@ -82,7 +82,8 @@ static esp_err_t h_status(httpd_req_t *req)
         "{\"state\":\"%s\",\"ssid\":\"%s\",\"ip\":\"%s\",\"ap\":\"%s\",\"has_creds\":%s,\"nrf\":\"%s\","
         "\"mqtt\":%s,\"mqtt_host\":\"%s\",\"bme\":%s,\"temp\":%.2f,\"hum\":%.1f,\"hpa\":%.1f,"
         "\"ld\":%s,\"presence\":%s,\"presence_s\":%lu,\"mute_s\":%d,"
-        "\"ac\":{\"on\":%s,\"mode\":\"%s\",\"temp\":%d,\"fan\":\"%s\",\"silent\":%s,\"eco\":%s,\"swing\":%s}}",
+        "\"ac\":{\"on\":%s,\"mode\":\"%s\",\"temp\":%d,\"fan\":\"%s\",\"silent\":%s,\"eco\":%s,\"swing\":%s,"
+        "\"timer_on\":%s,\"timer_h\":%.1f}}",
         wifi_mgr_state_str(), wifi_mgr_ssid(), wifi_mgr_ip(), wifi_mgr_ap_ssid(),
         wifi_mgr_has_creds() ? "true" : "false", uart_link_status(),
         mqtt_ha_connected() ? "true" : "false", mqtt_ha_host(),
@@ -90,7 +91,8 @@ static esp_err_t h_status(httpd_req_t *req)
         ld2410_alive() ? "true" : "false", rules_presence() ? "true" : "false",
         (unsigned long)rules_presence_secs(), uart_link_mute_secs(),
         ac.on ? "true" : "false", acmode, ac.temp_c, ac_fan_str(ac.fan),
-        ac.silent ? "true" : "false", ac.eco ? "true" : "false", ac.swing ? "true" : "false");
+        ac.silent ? "true" : "false", ac.eco ? "true" : "false", ac.swing ? "true" : "false",
+        ac.timer_on ? "true" : "false", ac.timer_halfh / 2.0);
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, buf);
 }

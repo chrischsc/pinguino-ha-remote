@@ -2,19 +2,26 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "esp_timer.h"
 #include "esp_log.h"
 #include "nvs.h"
 
 #define NVS_NS  "acstate"
 #define NVS_KEY "st"
-#define NVS_VER 1
+#define NVS_VER 2          // bumped: timer_h -> timer_on/timer_halfh
+
+// After pressing timer (or up/down while editing it), up/down adjust the timer for this long;
+// afterwards they return to adjusting temperature, mirroring the device's brief edit mode.
+#define TIMER_EDIT_US (5 * 1000000)
 
 static const char *TAG = "acstate";
 
 static ac_state_t s = {
-    .on = false, .mode = AC_MODE_COOL, .temp_c = AC_TEMP_DEF,
-    .fan = AC_FAN_AUTO, .silent = false, .eco = false, .swing = false, .timer_h = 0,
+    .on = false, .mode = AC_MODE_COOL, .temp_c = AC_TEMP_DEF, .fan = AC_FAN_AUTO,
+    .silent = false, .eco = false, .swing = false,
+    .timer_on = false, .timer_halfh = TIMER_DEF_HALFH,
 };
+static int64_t s_timer_edit_until_us;
 static SemaphoreHandle_t s_lock;
 static ac_state_cb_t     s_cb;
 #define LOCK()   do { if (s_lock) xSemaphoreTake(s_lock, portMAX_DELAY); } while (0)
@@ -25,6 +32,8 @@ static void normalize(ac_state_t *st)
 {
     if (st->temp_c < AC_TEMP_MIN) st->temp_c = AC_TEMP_MIN;
     if (st->temp_c > AC_TEMP_MAX) st->temp_c = AC_TEMP_MAX;
+    if (st->timer_halfh < TIMER_MIN_HALFH) st->timer_halfh = TIMER_MIN_HALFH;
+    if (st->timer_halfh > TIMER_MAX_HALFH) st->timer_halfh = TIMER_MAX_HALFH;
     if (st->mode != AC_MODE_COOL) { st->silent = false; st->eco = false; }   // COOL-only flags
     if (st->mode == AC_MODE_DRY)  st->fan = AC_FAN_AUTO;                      // dry forces auto
     if (st->mode == AC_MODE_FAN && st->fan == AC_FAN_AUTO) st->fan = AC_FAN_MAX; // no auto in fan
@@ -72,11 +81,26 @@ bool ac_state_apply(const char *btn)
 {
     LOCK();
     ac_state_t before = s;
+    int64_t now = esp_timer_get_time();
+    bool timer_edit = now < s_timer_edit_until_us;   // up/down adjust the timer, not temp
 
     if (!strcmp(btn, "power")) {
         s.on = !s.on;
-    } else if (!s.on && strcmp(btn, "timer") != 0) {
-        // In standby the AC ignores everything but power (and timer scheduling). No model change.
+        s_timer_edit_until_us = 0;
+    } else if (!strcmp(btn, "timer")) {
+        // Toggle the timer; switching it on starts at 6.0 h and opens the edit window.
+        if (s.timer_on) { s.timer_on = false; s_timer_edit_until_us = 0; }
+        else { s.timer_on = true; s.timer_halfh = TIMER_DEF_HALFH; s_timer_edit_until_us = now + TIMER_EDIT_US; }
+    } else if (timer_edit && (!strcmp(btn, "up") || !strcmp(btn, "down"))) {
+        // 0.5 h steps from 0.5 to 9.5, then 1 h steps from 10 to 24 (half-hours: 20 == 10 h).
+        int hh = s.timer_halfh + (!strcmp(btn, "up") ? (s.timer_halfh < 20 ? 1 : 2)
+                                                      : (s.timer_halfh > 20 ? -2 : -1));
+        if (hh < TIMER_MIN_HALFH) hh = TIMER_MIN_HALFH;
+        if (hh > TIMER_MAX_HALFH) hh = TIMER_MAX_HALFH;
+        s.timer_halfh = (uint8_t)hh;
+        s_timer_edit_until_us = now + TIMER_EDIT_US;   // each tweak extends the edit window
+    } else if (!s.on) {
+        // In standby the AC ignores everything but power and timer. No model change.
     } else if (!strcmp(btn, "mode")) {
         // OBSERVED cycle: cool -> dry -> fan -> (wrap) cool. Confirmed on the device — going
         // fan -> dry takes two "mode" presses (fan -> cool -> dry), which only this order gives.

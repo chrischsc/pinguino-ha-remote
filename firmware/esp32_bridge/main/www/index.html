@@ -222,12 +222,14 @@
           <span class="ind" id="indEco">ECO</span>
           <span class="ind" id="indSilent">SILENT</span>
           <span class="ind" id="indSwing">SWING</span>
-          <span class="amb">amb <b id="scrT">--.-</b>° <b id="scrH">--</b>% <b id="scrP">----</b></span>
+          <span class="ind" id="indTimer">⏱</span>
+          <span class="amb">amb <b id="scrT">--.-</b>° <b id="scrH">--</b>%</span>
         </div>
         <div class="statusbar">
           <div class="grp"><span class="sdot" id="dWifi"></span>Wi-Fi</div>
           <div class="grp"><span class="sdot" id="dMqtt"></span>MQTT</div>
           <div class="grp"><span class="sdot" id="dNrf"></span><span id="scrNrf">nRF</span></div>
+          <div class="grp"><span class="sdot" id="dPres"></span><span id="scrPres">prés.</span></div>
         </div>
       </div>
 
@@ -243,35 +245,6 @@
     <p class="small" style="margin-top:8px">L'écran reflète l'état <b>modélisé</b> du climatiseur
       (boucle ouverte). En cas de dérive, lancez « Synchroniser » et reproduisez sur les touches
       l'état réellement affiché par le climatiseur — rien n'est envoyé pendant ces 30 s.</p>
-  </div>
-
-  <div class="card" id="acCard">
-    <h2>Climatiseur (état modélisé)</h2>
-    <p class="ac-state" id="acState">—</p>
-    <div class="ac-row">
-      <select id="acMode" onchange="acCmd('mode='+this.value)">
-        <option value="off">Off</option><option value="cool">Froid</option>
-        <option value="dry">Déshu.</option><option value="fan_only">Ventil.</option>
-      </select>
-      <span class="small">T°</span>
-      <button class="ui" onclick="acTemp(-1)">−</button>
-      <b id="acTempV">--</b>
-      <button class="ui" onclick="acTemp(1)">+</button>
-      <select id="acFan" onchange="acCmd('fan='+this.value)">
-        <option value="min">min</option><option value="medium">moyen</option>
-        <option value="max">max</option><option value="auto">auto</option>
-      </select>
-    </div>
-    <div class="ac-row">
-      <label><input type="checkbox" id="acSwing" onchange="acCmd('swing='+(this.checked?1:0))"> Swing</label>
-      <label><input type="checkbox" id="acEco" onchange="acCmd('eco='+(this.checked?1:0))"> Eco</label>
-      <label><input type="checkbox" id="acSilent" onchange="acCmd('silent='+(this.checked?1:0))"> Silent</label>
-    </div>
-    <p class="small">Ces commandes <b>pilotent</b> le climatiseur (séquence de touches espacées
-      ~1,8 s). Eco/Silent et la température ne sont valides qu'en mode Froid ; en Déshu. le
-      ventilateur est automatique. Pour corriger une dérive sans rien envoyer, utilisez
-      « Synchroniser » sur la télécommande ci-dessus.</p>
-    <p class="small" id="acMsg"></p>
   </div>
 
   <div class="card" id="wifiCard">
@@ -383,7 +356,6 @@ async function refresh(){
     // screen — sensors
     $('#scrT').textContent = s.bme ? s.temp : '--.-';
     $('#scrH').textContent = s.bme ? Math.round(s.hum) : '--';
-    $('#scrP').textContent = s.bme ? Math.round(s.hpa) : '----';
 
     // screen — status dots
     setDot('dWifi', s.state==='connected' ? 'ok' : (s.state==='connecting' ? 'warn' : ''));
@@ -391,6 +363,9 @@ async function refresh(){
     const nrf = s.nrf || 'offline';
     setDot('dNrf', nrf==='ready' ? 'ok' : (nrf==='offline' ? '' : (nrf==='error' ? 'bad' : 'warn')));
     $('#scrNrf').textContent = 'nRF '+nrf;
+    // LD2410 presence on the remote status: occupied / vacant / sensor absent
+    setDot('dPres', s.ld ? (s.presence ? 'ok' : '') : 'warn');
+    $('#scrPres').textContent = s.ld ? (s.presence ? 'occupé' : 'vide') : 'capteur';
 
     // config cards
     $('#wifiState').textContent = s.state==='connected'
@@ -405,30 +380,20 @@ async function refresh(){
       $('#presSecs').textContent = (s.ld && s.presence) ? '· '+s.presence_s+' s' : '';
     }
 
-    // AC modeled state
-    if (s.ac && $('#acState')) {
-      const a = s.ac, af = document.activeElement;
-      const lbl = {cool:'Froid', dry:'Déshu.', fan:'Ventil.'};
-      $('#acState').innerHTML = a.on
-        ? '<b>'+(lbl[a.mode]||a.mode)+'</b>'+(a.mode==='cool' ? ' · '+a.temp+'°C' : '')+' · vent. '+a.fan
-          + (a.swing?' · swing':'') + (a.eco?' · eco':'') + (a.silent?' · silent':'')
-        : '<span class="off">Off</span>';
-      const setV = (id,v)=>{ const el=$('#'+id); if (el && el!==af) el.value=v; };
-      const setC = (id,v)=>{ const el=$('#'+id); if (el && el!==af) el.checked=v; };
-      setV('acMode', a.on ? (a.mode==='fan'?'fan_only':a.mode) : 'off');
-      setV('acFan', a.fan);
-      if ($('#acTempV')) $('#acTempV').textContent = a.temp;
-      setC('acSwing', a.swing); setC('acEco', a.eco); setC('acSilent', a.silent);
-
-      // remote: light up 2-state buttons + render the AC "display" screen
+    // AC modeled state -> remote display (lit 2-state buttons + the screen)
+    if (s.ac) {
+      const a = s.ac;
       const litBtn = (b,cls,on)=>{ const el=document.querySelector('[data-b="'+b+'"]'); if (el) el.classList.toggle(cls,!!on); };
       litBtn('power','on', a.on);
       litBtn('eco','lit', a.on&&a.eco); litBtn('silent','lit', a.on&&a.silent); litBtn('flap','lit', a.on&&a.swing);
+      litBtn('timer','lit', a.timer_on);
       $('#acModeIcon').innerHTML = a.on ? (MODE_SVG[a.mode]||'') : '';
       $('#acSet').textContent = a.on ? (a.mode==='cool' ? a.temp : '··') : 'OFF';
       $('#acFanInd').innerHTML = a.on ? fanBars(a.fan) : '';
       const ind = (id,on)=>$('#'+id).classList.toggle('on',!!on);
       ind('indEco', a.on&&a.eco); ind('indSilent', a.on&&a.silent); ind('indSwing', a.on&&a.swing);
+      const t = $('#indTimer');
+      if (t) { t.classList.toggle('on', a.timer_on); t.textContent = a.timer_on ? '⏱ '+a.timer_h.toFixed(1)+'h' : '⏱'; }
     }
   } catch(e){}
 }
@@ -536,16 +501,6 @@ async function saveRules(){
     loadRules();
   } catch(e){ $('#rulesMsg').textContent = 'Erreur d’enregistrement.'; }
 }
-
-// ---- AC climate (modeled) ----
-async function acCmd(body){
-  try {
-    await fetch('/api/accmd', {method:'POST',
-      headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
-    $('#acMsg').textContent = 'Commande envoyée…'; setTimeout(refresh, 900);
-  } catch(e){ $('#acMsg').textContent = 'Erreur.'; }
-}
-function acTemp(d){ acCmd('temp='+((parseInt($('#acTempV').textContent)||24)+d)); }
 
 loadPins();
 loadRules();
