@@ -46,23 +46,21 @@ static void normalize(ac_state_t *st)
     if (st->mode == AC_MODE_FAN && st->fan == AC_FAN_AUTO) st->fan = AC_FAN_MAX; // no auto in fan
 }
 
-static void persist(void)
+// Persist/notify a snapshot taken under the lock — never read the live `s` here, since another
+// task could mutate it mid-blob-write and corrupt the persisted/published state.
+static void persist(const ac_state_t *snap)
 {
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
-    uint8_t ver = NVS_VER;
-    if (nvs_set_u8(h, "ver", ver) == ESP_OK)
-        nvs_set_blob(h, NVS_KEY, &s, sizeof(s));
+    if (nvs_set_u8(h, "ver", NVS_VER) == ESP_OK)
+        nvs_set_blob(h, NVS_KEY, snap, sizeof(*snap));
     nvs_commit(h);
     nvs_close(h);
 }
 
-static void notify(void)
+static void notify(const ac_state_t *snap)
 {
-    if (!s_cb) return;
-    ac_state_t snap;
-    LOCK(); snap = s; UNLOCK();
-    s_cb(&snap);
+    if (s_cb) s_cb(snap);
 }
 
 void ac_state_init(void)
@@ -138,9 +136,10 @@ bool ac_state_apply(const char *btn)
     // via subsequent up/down — ambiguous to track open-loop). The press still relays to the AC.
 
     normalize(&s);
+    ac_state_t snap = s;
     bool changed = memcmp(&before, &s, sizeof(s)) != 0;
     UNLOCK();
-    if (changed) { persist(); notify(); }
+    if (changed) { persist(&snap); notify(&snap); }
     return changed;
 }
 
@@ -149,9 +148,10 @@ void ac_state_set(const ac_state_t *in)
     LOCK();
     s = *in;
     normalize(&s);
+    ac_state_t snap = s;
     UNLOCK();
-    persist();
-    notify();
+    persist(&snap);
+    notify(&snap);
 }
 
 const char *ac_mode_ha(const ac_state_t *st)
