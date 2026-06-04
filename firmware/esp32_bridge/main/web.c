@@ -220,7 +220,7 @@ static esp_err_t h_reboot(httpd_req_t *req)
 
 // ---- presence rules ----
 // GET returns hand-rolled JSON (chunked, like h_scan); POST takes indexed form fields
-// (n + en<i>/cond<i>/dur<i>/act<i>/cd<i>), parsed with form_get — no JSON lib needed.
+// (n + en<i>/cond<i>/dur<i>/tgt<i>), parsed with form_get — no JSON lib needed.
 static esp_err_t h_rules(httpd_req_t *req)
 {
     rule_t rs[RULES_MAX];
@@ -233,18 +233,17 @@ static esp_err_t h_rules(httpd_req_t *req)
     for (int i = 0; i < n; i++) {
         char item[160];
         snprintf(item, sizeof(item),
-            "%s{\"enabled\":%s,\"cond\":\"%s\",\"duration_s\":%lu,\"cooldown_s\":%lu,\"action\":\"%s\"}",
+            "%s{\"enabled\":%s,\"cond\":\"%s\",\"duration_s\":%lu,\"target\":\"%s\"}",
             i ? "," : "", rs[i].enabled ? "true" : "false",
             rs[i].cond == RULE_COND_ABSENCE ? "absence" : "presence",
-            (unsigned long)rs[i].duration_s, (unsigned long)rs[i].cooldown_s, rs[i].action);
+            (unsigned long)rs[i].duration_s, rs[i].target);
         httpd_resp_sendstr_chunk(req, item);
     }
     httpd_resp_sendstr_chunk(req, "]}");
     return httpd_resp_sendstr_chunk(req, NULL);
 }
 
-// Parse a non-negative seconds field, clamped to RULE_MAX_SECS so large values can't wrap
-// when narrowed/stored (e.g. a 1-day rule no longer truncates to ~5.8 h).
+// Parse a non-negative seconds field, clamped to RULE_MAX_SECS so large values can't wrap.
 static uint32_t form_secs(const char *body, const char *key)
 {
     char v[16];
@@ -272,8 +271,7 @@ static esp_err_t h_rules_save(httpd_req_t *req)
         rs[i].cond = (form_get(body, key, v, sizeof(v)) && !strcmp(v, "absence"))
                      ? RULE_COND_ABSENCE : RULE_COND_PRESENCE;
         snprintf(key, sizeof(key), "dur%d", i);   rs[i].duration_s = form_secs(body, key);
-        snprintf(key, sizeof(key), "cd%d", i);    rs[i].cooldown_s = form_secs(body, key);
-        snprintf(key, sizeof(key), "act%d", i);   form_get(body, key, rs[i].action, sizeof(rs[i].action));
+        snprintf(key, sizeof(key), "tgt%d", i);   form_get(body, key, rs[i].target, sizeof(rs[i].target));
     }
     bool ok = rules_set(rs, n);
     httpd_resp_set_type(req, "application/json");

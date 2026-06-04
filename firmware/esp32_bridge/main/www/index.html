@@ -291,8 +291,10 @@
     <div id="ruleList"></div>
     <button class="ui" onclick="addRule()">+ Ajouter une règle</button>
     <button class="ui" onclick="saveRules()">Enregistrer les règles</button>
-    <p class="small">« Présence/Absence maintenue ≥ N min → appuyer sur une touche », avec un délai
-      anti-répétition (cooldown).</p>
+    <p class="small">« Présence/Absence maintenue ≥ N min → mettre le climatiseur dans l'état choisi ».
+      L'action vise un <b>état</b> (idempotent) au lieu d'appuyer une touche : pas de cooldown,
+      la règle ne se déclenche qu'une fois par épisode et ne « retoggle » jamais. La présence est
+      anti-rebond (~10 s) pour ignorer les pertes brèves du capteur.</p>
     <p class="small" id="rulesMsg"></p>
   </div>
 
@@ -447,18 +449,17 @@ async function reboot(){
 }
 
 // ---- presence automation ----
-const BTNS = ['power','mode','eco','timer','fan','silent','flap','up','down'];
+const TARGETS = [['off','Éteindre'],['cool','Froid'],['dry','Déshu.'],['fan_only','Ventil.']];
 let RULES = [];
 function ruleRow(r, idx){
   const cond = ['presence','absence'].map(c =>
     `<option value="${c}"${r.cond===c?' selected':''}>${c==='presence'?'Présence':'Absence'}</option>`).join('');
-  const acts = BTNS.map(b => `<option value="${b}"${r.action===b?' selected':''}>${b}</option>`).join('');
+  const tgts = TARGETS.map(([v,l]) => `<option value="${v}"${r.target===v?' selected':''}>${l}</option>`).join('');
   return `<div class="rule">
     <label><input type="checkbox" class="r_en"${r.enabled?' checked':''}> on</label>
     <select class="r_cond">${cond}</select>
     <span>≥</span><input class="r_dur" inputmode="numeric" value="${+(((r.duration_s||0)/60).toFixed(2))}"><span>min →</span>
-    <select class="r_act">${acts}</select>
-    <span>cooldown</span><input class="r_cd" inputmode="numeric" value="${+(((r.cooldown_s||0)/60).toFixed(2))}"><span>min</span>
+    <select class="r_tgt">${tgts}</select>
     <button class="ui rm" onclick="delRule(${idx})">✕</button>
   </div>`;
 }
@@ -468,7 +469,7 @@ function renderRules(){
 }
 function addRule(){
   if(RULES.length>=6){ $('#rulesMsg').textContent='Maximum 6 règles.'; return; }
-  RULES.push({enabled:true,cond:'presence',duration_s:300,action:'power',cooldown_s:600});
+  RULES.push({enabled:true,cond:'presence',duration_s:300,target:'cool'});
   renderRules();
 }
 function delRule(i){ RULES.splice(i,1); renderRules(); }
@@ -477,8 +478,7 @@ function collectRules(){
     enabled: el.querySelector('.r_en').checked,
     cond: el.querySelector('.r_cond').value,
     duration_s: Math.max(0, Math.round((parseFloat(el.querySelector('.r_dur').value)||0)*60)),
-    action: el.querySelector('.r_act').value,
-    cooldown_s: Math.max(0, Math.round((parseFloat(el.querySelector('.r_cd').value)||0)*60)),
+    target: el.querySelector('.r_tgt').value,
   }));
 }
 async function loadRules(){
@@ -491,8 +491,7 @@ async function saveRules(){
     parts.push('en'+i+'='+(r.enabled?1:0));
     parts.push('cond'+i+'='+r.cond);
     parts.push('dur'+i+'='+r.duration_s);
-    parts.push('act'+i+'='+encodeURIComponent(r.action));
-    parts.push('cd'+i+'='+r.cooldown_s);
+    parts.push('tgt'+i+'='+encodeURIComponent(r.target));
   });
   try {
     const r = await (await fetch('/api/rules', {method:'POST',
