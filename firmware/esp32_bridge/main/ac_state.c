@@ -78,7 +78,9 @@ bool ac_state_apply(const char *btn)
     } else if (!s.on && strcmp(btn, "timer") != 0) {
         // In standby the AC ignores everything but power (and timer scheduling). No model change.
     } else if (!strcmp(btn, "mode")) {
-        s.mode = (ac_mode_t)((s.mode + 1) % 3);          // cool -> dry -> fan -> cool (INFERRED order)
+        // OBSERVED cycle: cool -> dry -> fan -> (wrap) cool. Confirmed on the device — going
+        // fan -> dry takes two "mode" presses (fan -> cool -> dry), which only this order gives.
+        s.mode = (ac_mode_t)((s.mode + 1) % 3);
     } else if (!strcmp(btn, "up") || !strcmp(btn, "down")) {
         if (s.mode == AC_MODE_COOL) {                    // setpoint is COOL-only
             int t = (int)s.temp_c + (btn[0] == 'u' ? 1 : -1);
