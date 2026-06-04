@@ -3,6 +3,7 @@
 #include "wifi_mgr.h"
 #include "mqtt_ha.h"
 #include "pins.h"
+#include "ac_state.h"
 #include <string.h>
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
@@ -73,6 +74,7 @@ bool uart_link_press(const char *btn)
     int n = snprintf(line, sizeof(line), "press %s\n", btn);
     uart_write_bytes(LINK_UART, line, n);
     ESP_LOGI(TAG, "-> nRF: press %s", btn);
+    ac_state_apply(btn);   // fold the press into the open-loop AC model (web/MQTT/rules/cmd)
     return true;
 }
 

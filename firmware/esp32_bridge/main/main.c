@@ -21,6 +21,8 @@
 #include "bme280.h"
 #include "ld2410.h"
 #include "rules.h"
+#include "ac_state.h"
+#include "ac_cmd.h"
 
 static const char *TAG = "bridge";
 
@@ -37,10 +39,12 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     pins_load();      // resolve configurable GPIOs from NVS before any driver uses them
+    ac_state_init();  // open-loop AC model (load last state from NVS) — before any press
     led_status_init();
     uart_link_init();
     wifi_mgr_init();
     web_start();
+    ac_cmd_init();    // worker that turns HA targets into paced press sequences
     mqtt_ha_init();   // starts the MQTT client (no-op if no broker configured); auto-connects once STA is up
     bme280_init();    // I2C BME280 (pins from config) -> UART env + HA sensors
     ld2410_init();    // LD2410 presence radar on UART2 (pins from config)

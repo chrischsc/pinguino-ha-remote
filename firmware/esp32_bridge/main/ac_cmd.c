@@ -1,0 +1,126 @@
+#include "ac_cmd.h"
+#include "ac_state.h"
+#include "uart_link.h"
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+#include "esp_log.h"
+
+static const char *TAG = "accmd";
+
+#define PRESS_GAP_MS 200      // spacing between presses in a sequence so the AC registers each
+#define MAX_STEPS    40       // hard cap on any single sequence (temp can need many)
+
+typedef enum { REQ_MODE, REQ_TEMP, REQ_FAN, REQ_SW } req_kind_t;
+typedef struct {
+    req_kind_t kind;
+    int  ival;            // MODE: ac_mode_t | TEMP: target | FAN: ac_fan_t | SW: on(0/1)
+    bool on;              // MODE: want_on
+    char name[8];         // SW: which ("swing"/"eco"/"silent")
+} ac_req_t;
+
+static QueueHandle_t s_q;
+
+static void press(const char *b)
+{
+    uart_link_press(b);                       // relays to nRF AND updates ac_state
+    vTaskDelay(pdMS_TO_TICKS(PRESS_GAP_MS));
+}
+
+static void do_mode(ac_mode_t target, bool want_on)
+{
+    ac_state_t st; ac_state_get_copy(&st);
+    if (!want_on) { if (st.on) press("power"); return; }
+    if (!st.on) press("power");               // wake (resumes last mode)
+    for (int i = 0; i < 3; i++) {
+        ac_state_get_copy(&st);
+        if (st.mode == target) break;
+        press("mode");
+    }
+}
+
+static void do_temp(int target)
+{
+    for (int i = 0; i < MAX_STEPS; i++) {
+        ac_state_t st; ac_state_get_copy(&st);
+        if (!st.on || st.mode != AC_MODE_COOL) break;   // setpoint is COOL-only
+        if (st.temp_c == target) break;
+        press(st.temp_c < target ? "up" : "down");
+    }
+}
+
+static void do_fan(ac_fan_t target)
+{
+    for (int i = 0; i < 5; i++) {
+        ac_state_t st; ac_state_get_copy(&st);
+        if (!st.on || st.mode == AC_MODE_DRY) break;             // not settable in dry
+        if (target == AC_FAN_AUTO && st.mode != AC_MODE_COOL) break; // auto = cool only
+        if (st.fan == target) break;
+        press("fan");
+    }
+}
+
+static void do_switch(const char *which, bool on)
+{
+    ac_state_t st; ac_state_get_copy(&st);
+    if (!st.on) return;
+    bool eco_sil = (!strcmp(which, "eco") || !strcmp(which, "silent"));
+    if (eco_sil && st.mode != AC_MODE_COOL) return;             // COOL-only
+    bool cur = !strcmp(which, "swing") ? st.swing
+             : !strcmp(which, "eco")   ? st.eco : st.silent;
+    if (cur != on) press(!strcmp(which, "swing") ? "flap" : which);
+}
+
+static void worker(void *arg)
+{
+    ac_req_t r;
+    for (;;) {
+        if (xQueueReceive(s_q, &r, portMAX_DELAY) != pdTRUE) continue;
+        switch (r.kind) {
+            case REQ_MODE: do_mode((ac_mode_t)r.ival, r.on); break;
+            case REQ_TEMP: do_temp(r.ival);                  break;
+            case REQ_FAN:  do_fan((ac_fan_t)r.ival);         break;
+            case REQ_SW:   do_switch(r.name, r.ival != 0);   break;
+        }
+    }
+}
+
+void ac_cmd_init(void)
+{
+    s_q = xQueueCreate(8, sizeof(ac_req_t));
+    xTaskCreate(worker, "ac_cmd", 3072, NULL, 4, NULL);
+}
+
+static void enqueue(const ac_req_t *r) { if (s_q) xQueueSend(s_q, r, 0); }
+
+void ac_cmd_set_mode_ha(const char *ha_mode)
+{
+    ac_mode_t m; bool on;
+    if (!ac_mode_from_ha(ha_mode, &m, &on)) { ESP_LOGW(TAG, "bad mode '%s'", ha_mode); return; }
+    ac_req_t r = { .kind = REQ_MODE, .ival = (int)m, .on = on };
+    enqueue(&r);
+}
+
+void ac_cmd_set_temp(int target_c)
+{
+    if (target_c < AC_TEMP_MIN) target_c = AC_TEMP_MIN;
+    if (target_c > AC_TEMP_MAX) target_c = AC_TEMP_MAX;
+    ac_req_t r = { .kind = REQ_TEMP, .ival = target_c };
+    enqueue(&r);
+}
+
+void ac_cmd_set_fan(const char *fan_str)
+{
+    ac_fan_t f;
+    if (!ac_fan_from_str(fan_str, &f)) { ESP_LOGW(TAG, "bad fan '%s'", fan_str); return; }
+    ac_req_t r = { .kind = REQ_FAN, .ival = (int)f };
+    enqueue(&r);
+}
+
+void ac_cmd_set_switch(const char *which, bool on)
+{
+    ac_req_t r = { .kind = REQ_SW, .ival = on ? 1 : 0 };
+    strlcpy(r.name, which, sizeof(r.name));
+    enqueue(&r);
+}

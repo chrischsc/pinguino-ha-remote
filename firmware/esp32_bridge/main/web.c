@@ -6,6 +6,8 @@
 #include "pins.h"
 #include "rules.h"
 #include "ld2410.h"
+#include "ac_state.h"
+#include "ac_cmd.h"
 #include <string.h>
 #include <stdlib.h>
 #include "freertos/FreeRTOS.h"
@@ -73,17 +75,22 @@ static esp_err_t h_index(httpd_req_t *req)
 static esp_err_t h_status(httpd_req_t *req)
 {
     float t = 0, h = 0, p = 0; bool bme = bme280_get(&t, &h, &p);
-    char buf[512];
+    ac_state_t ac; ac_state_get_copy(&ac);
+    const char *acmode = ac.mode == AC_MODE_DRY ? "dry" : ac.mode == AC_MODE_FAN ? "fan" : "cool";
+    char buf[700];
     snprintf(buf, sizeof(buf),
         "{\"state\":\"%s\",\"ssid\":\"%s\",\"ip\":\"%s\",\"ap\":\"%s\",\"has_creds\":%s,\"nrf\":\"%s\","
         "\"mqtt\":%s,\"mqtt_host\":\"%s\",\"bme\":%s,\"temp\":%.2f,\"hum\":%.1f,\"hpa\":%.1f,"
-        "\"ld\":%s,\"presence\":%s,\"presence_s\":%lu}",
+        "\"ld\":%s,\"presence\":%s,\"presence_s\":%lu,"
+        "\"ac\":{\"on\":%s,\"mode\":\"%s\",\"temp\":%d,\"fan\":\"%s\",\"silent\":%s,\"eco\":%s,\"swing\":%s}}",
         wifi_mgr_state_str(), wifi_mgr_ssid(), wifi_mgr_ip(), wifi_mgr_ap_ssid(),
         wifi_mgr_has_creds() ? "true" : "false", uart_link_status(),
         mqtt_ha_connected() ? "true" : "false", mqtt_ha_host(),
         bme ? "true" : "false", t, h, p,
         ld2410_alive() ? "true" : "false", rules_presence() ? "true" : "false",
-        (unsigned long)rules_presence_secs());
+        (unsigned long)rules_presence_secs(),
+        ac.on ? "true" : "false", acmode, ac.temp_c, ac_fan_str(ac.fan),
+        ac.silent ? "true" : "false", ac.eco ? "true" : "false", ac.swing ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, buf);
 }
@@ -271,6 +278,47 @@ static esp_err_t h_rules_save(httpd_req_t *req)
     return httpd_resp_sendstr(req, ok ? "{\"ok\":true}" : "{\"ok\":false}");
 }
 
+// ---- AC model: sync ("set current state") + climate commands ----
+static ac_mode_t mode_from_form(const char *v)
+{
+    if (!strcmp(v, "dry")) return AC_MODE_DRY;
+    if (!strcmp(v, "fan")) return AC_MODE_FAN;
+    return AC_MODE_COOL;
+}
+
+// POST /api/acstate — overwrite the model to match reality (no presses sent).
+static esp_err_t h_acstate(httpd_req_t *req)
+{
+    char body[200]; read_body(req, body, sizeof(body));
+    ac_state_t st; ac_state_get_copy(&st);   // start from current, override sent fields
+    char v[12];
+    if (form_get(body, "on", v, sizeof(v)))     st.on     = atoi(v) != 0;
+    if (form_get(body, "mode", v, sizeof(v)))   st.mode   = mode_from_form(v);
+    if (form_get(body, "temp", v, sizeof(v)))   st.temp_c = (uint8_t)atoi(v);
+    if (form_get(body, "fan", v, sizeof(v)))    { ac_fan_t f; if (ac_fan_from_str(v, &f)) st.fan = f; }
+    if (form_get(body, "silent", v, sizeof(v))) st.silent = atoi(v) != 0;
+    if (form_get(body, "eco", v, sizeof(v)))    st.eco    = atoi(v) != 0;
+    if (form_get(body, "swing", v, sizeof(v)))  st.swing  = atoi(v) != 0;
+    ac_state_set(&st);   // normalises, persists, pushes HA state
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, "{\"ok\":true}");
+}
+
+// POST /api/accmd — drive the AC toward a target via the press-sequence worker (one field per call).
+static esp_err_t h_accmd(httpd_req_t *req)
+{
+    char body[64]; read_body(req, body, sizeof(body));
+    char v[12];
+    if (form_get(body, "mode", v, sizeof(v)))   ac_cmd_set_mode_ha(v);   // off/cool/dry/fan_only
+    else if (form_get(body, "temp", v, sizeof(v))) ac_cmd_set_temp(atoi(v));
+    else if (form_get(body, "fan", v, sizeof(v)))  ac_cmd_set_fan(v);
+    else if (form_get(body, "swing", v, sizeof(v)))  ac_cmd_set_switch("swing",  atoi(v) != 0);
+    else if (form_get(body, "eco", v, sizeof(v)))    ac_cmd_set_switch("eco",    atoi(v) != 0);
+    else if (form_get(body, "silent", v, sizeof(v))) ac_cmd_set_switch("silent", atoi(v) != 0);
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, "{\"ok\":true}");
+}
+
 static void reg(httpd_handle_t s, const char *uri, httpd_method_t m, esp_err_t (*fn)(httpd_req_t*))
 {
     httpd_uri_t u = { .uri = uri, .method = m, .handler = fn };
@@ -297,5 +345,7 @@ void web_start(void)
     reg(s, "/api/reboot", HTTP_POST, h_reboot);
     reg(s, "/api/rules", HTTP_GET, h_rules);
     reg(s, "/api/rules", HTTP_POST, h_rules_save);
+    reg(s, "/api/acstate", HTTP_POST, h_acstate);
+    reg(s, "/api/accmd", HTTP_POST, h_accmd);
     ESP_LOGI(TAG, "web server up on :80");
 }
