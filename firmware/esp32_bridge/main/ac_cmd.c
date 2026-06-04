@@ -31,12 +31,16 @@ static void press(const char *b)
     vTaskDelay(pdMS_TO_TICKS(PRESS_GAP_MS));
 }
 
+// A press only updates the model when the relay is ready (or we're syncing). If neither, the AC
+// is unreachable — bail rather than spin pressing a model that won't move.
 static void do_mode(ac_mode_t target, bool want_on)
 {
+    if (!uart_link_will_model()) return;
     ac_state_t st; ac_state_get_copy(&st);
     if (!want_on) { if (st.on) press("power"); return; }
     if (!st.on) press("power");               // wake (resumes last mode)
     for (int i = 0; i < 3; i++) {
+        if (!uart_link_will_model()) return;
         ac_state_get_copy(&st);
         if (st.mode == target) break;
         press("mode");
@@ -46,6 +50,7 @@ static void do_mode(ac_mode_t target, bool want_on)
 static void do_temp(int target)
 {
     for (int i = 0; i < MAX_STEPS; i++) {
+        if (!uart_link_will_model()) return;
         ac_state_t st; ac_state_get_copy(&st);
         if (!st.on || st.mode != AC_MODE_COOL) break;   // setpoint is COOL-only
         if (st.temp_c == target) break;
@@ -56,6 +61,7 @@ static void do_temp(int target)
 static void do_fan(ac_fan_t target)
 {
     for (int i = 0; i < 5; i++) {
+        if (!uart_link_will_model()) return;
         ac_state_t st; ac_state_get_copy(&st);
         if (!st.on || st.mode == AC_MODE_DRY) break;             // not settable in dry
         if (target == AC_FAN_AUTO && st.mode != AC_MODE_COOL) break; // auto = cool only
@@ -66,6 +72,7 @@ static void do_fan(ac_fan_t target)
 
 static void do_switch(const char *which, bool on)
 {
+    if (!uart_link_will_model()) return;
     ac_state_t st; ac_state_get_copy(&st);
     if (!st.on) return;
     bool eco_sil = (!strcmp(which, "eco") || !strcmp(which, "silent"));

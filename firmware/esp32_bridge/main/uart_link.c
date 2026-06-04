@@ -84,6 +84,16 @@ int uart_link_mute_secs(void)
     return r > 0 ? (int)(r / 1000000) + 1 : 0;
 }
 
+// A press only reaches the AC when the emulator is bonded + HID-subscribed (NRF_READY).
+bool uart_link_ready(void) { return s_effective == NRF_READY; }
+// A press is "meaningful" for the model when it will reach the AC OR we're in a sync window
+// (model-only re-alignment). Outside both, commanding can't take effect, so the model is left
+// alone to avoid drifting away from the real AC.
+bool uart_link_will_model(void)
+{
+    return esp_timer_get_time() < s_mute_until_us || s_effective == NRF_READY;
+}
+
 bool uart_link_press(const char *btn)
 {
     if (!uart_link_valid_btn(btn)) return false;
@@ -93,8 +103,10 @@ bool uart_link_press(const char *btn)
         int n = snprintf(line, sizeof(line), "press %s\n", btn);
         uart_write_bytes(LINK_UART, line, n);
     }
-    ESP_LOGI(TAG, "%s press %s", muted ? "(sync, model-only)" : "-> nRF:", btn);
-    ac_state_apply(btn);   // fold the press into the open-loop AC model (web/MQTT/rules/cmd)
+    bool model = muted || (s_effective == NRF_READY);
+    ESP_LOGI(TAG, "%s press %s%s", muted ? "(sync, model-only)" : "-> nRF:", btn,
+             model ? "" : " [no relay — model unchanged]");
+    if (model) ac_state_apply(btn);   // only model a press that can take effect (or sync)
     return true;
 }
 

@@ -2,6 +2,7 @@
 #include "ld2410.h"
 #include "ac_state.h"
 #include "ac_cmd.h"
+#include "uart_link.h"
 #include "mqtt_ha.h"
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -53,6 +54,7 @@ static void eval_task(void *arg)
         int  pres_pub = -1;            // -1 none, 0 mark unavailable, 1 publish `raw`
         char to_apply[RULES_MAX][RULE_TARGET_LEN];
         int  napply = 0;
+        bool ready = uart_link_ready();   // only fire (and disarm) when the AC is reachable
 
         LOCK();
         if (!alive) {                  // sensor offline: freeze automation, re-arm everything
@@ -87,6 +89,7 @@ static void eval_task(void *arg)
                                                                          : s_absent_since_us;
                 if (anchor == 0 || !s_armed[i]) continue;
                 if (now - anchor < (int64_t)s_rules[i].duration_s * 1000000) continue;
+                if (!ready) continue;                          // AC unreachable: stay armed, fire later
                 s_armed[i] = false;                            // edge-trigger: fire once
                 strlcpy(to_apply[napply++], s_rules[i].target, RULE_TARGET_LEN);
             }
