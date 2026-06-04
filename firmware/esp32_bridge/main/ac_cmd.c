@@ -9,7 +9,10 @@
 
 static const char *TAG = "accmd";
 
-#define PRESS_GAP_MS 200      // spacing between presses in a sequence so the AC registers each
+// The AC's capacitive touch buttons debounce ~1.5 s: presses closer than that are dropped,
+// which silently desyncs an open-loop multi-press sequence (e.g. fan->dry needs two "mode"
+// presses). Pace like a human, comfortably above the debounce. Raise this if drift persists.
+#define PRESS_GAP_MS 1800
 #define MAX_STEPS    40       // hard cap on any single sequence (temp can need many)
 
 typedef enum { REQ_MODE, REQ_TEMP, REQ_FAN, REQ_SW } req_kind_t;
