@@ -61,14 +61,26 @@
   .ac-row2 { display:flex; align-items:center; gap:2.4cqw; font-size:clamp(8px,2cqw,14px); }
   .ac-row2 .ind { color:#46525e; letter-spacing:.06em; font-weight:700; transition:.2s; }
   .ac-row2 .ind.on { color:#34d399; text-shadow:0 0 8px rgba(52,211,153,.6); }
-  .ac-row2 .tclock { font-size:1.4em; line-height:1; vertical-align:-0.14em; }
+  .ac-row2 .tclock { display:inline-flex; vertical-align:-0.18em; }
+  .ac-row2 .tclock svg { width:1.45em; height:1.45em; }
+  .ac-row2 .pencil { width:1em; height:1em; vertical-align:-0.12em; }
   /* digital barometer (temp / humidity / pressure) row inside the screen */
-  .baro { display:flex; justify-content:space-between; align-items:baseline; gap:2cqw; }
-  .baro .cell { display:flex; align-items:baseline; gap:.7cqw; }
-  .baro .ic { font-size:clamp(9px,2.4cqw,16px); }
+  .baro { display:flex; justify-content:space-between; align-items:center; gap:2cqw; }
+  .baro .cell { display:flex; align-items:center; gap:1cqw; }
+  .baro .ic { display:inline-flex; color:#6fa8c4; }
+  .baro .ic svg { width:clamp(11px,3cqw,18px); height:clamp(11px,3cqw,18px); }
   .baro b { font-size:clamp(13px,4cqw,30px); font-weight:600; color:#e8f9ff;
-            text-shadow:0 0 8px rgba(56,189,248,.4); }
-  .baro small { font-size:clamp(7px,1.7cqw,12px); color:#7fb8cf; }
+            text-shadow:0 0 8px rgba(56,189,248,.4); line-height:1; }
+  .baro small { font-size:clamp(7px,1.7cqw,12px); color:#7fb8cf; align-self:flex-end; margin-bottom:.4cqw; }
+
+  /* mode-aware affordance: dim controls that don't apply in the current AC state */
+  .key.dim { opacity:.28; }
+  .key { transition:opacity .2s, background .12s, border-color .12s, box-shadow .12s; }
+  .sync-btn svg { width:1em; height:1em; vertical-align:-0.12em; margin-right:.4em; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration:.001ms !important; animation-duration:.001ms !important; }
+  }
   .sync-banner { margin-top:10px; padding:10px 12px; border-radius:8px; font-size:13px;
     background:rgba(251,191,36,.12); border:1px solid rgba(251,191,36,.45); color:#fde68a; }
 
@@ -227,12 +239,12 @@
           <span class="ind" id="indEco">ECO</span>
           <span class="ind" id="indSilent">SILENT</span>
           <span class="ind" id="indSwing">SWING</span>
-          <span class="ind" id="indTimer"><span class="tclock">⏱</span></span>
+          <span class="ind" id="indTimer"><span class="tclock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg></span></span>
         </div>
         <div class="baro">
-          <span class="cell"><span class="ic">🌡</span><b id="scrT">--.-</b><small>°C</small></span>
-          <span class="cell"><span class="ic">💧</span><b id="scrH">--</b><small>%</small></span>
-          <span class="cell"><span class="ic">🧭</span><b id="scrP">----</b><small>hPa</small></span>
+          <span class="cell"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg></span><b id="scrT">--.-</b><small>°C</small></span>
+          <span class="cell"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg></span><b id="scrH">--</b><small>%</small></span>
+          <span class="cell"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14l3.5-3.5"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg></span><b id="scrP">----</b><small>hPa</small></span>
         </div>
         <div class="statusbar">
           <div class="grp"><span class="sdot" id="dWifi"></span>Wi-Fi</div>
@@ -249,7 +261,7 @@
       <span data-i18n="syncBanB">appuyez sur les touches pour reproduire l'état affiché par le climatiseur. Aucun signal n'est envoyé.</span>
     </div>
     <div style="display:flex; gap:8px; margin-top:10px">
-      <button class="ui" data-i18n="sync30" onclick="syncWindow()">⟳ Synchroniser (30 s)</button>
+      <button class="ui sync-btn" onclick="syncWindow()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg><span data-i18n="sync30">Synchroniser (30 s)</span></button>
     </div>
     <p class="small" data-i18n="syncHelp" style="margin-top:8px">L'écran reflète l'état modélisé du
       climatiseur (boucle ouverte). En cas de dérive, lancez « Synchroniser » et reproduisez sur les
@@ -322,7 +334,7 @@ const $ = s => document.querySelector(s);
 // ---- i18n (FR/EN/DE), auto from browser, override via the header selector ----
 const I18N = {
   remote:{fr:'Télécommande',en:'Remote',de:'Fernbedienung'},
-  sync30:{fr:'⟳ Synchroniser (30 s)',en:'⟳ Sync (30 s)',de:'⟳ Synchronisieren (30 s)'},
+  sync30:{fr:'Synchroniser (30 s)',en:'Sync (30 s)',de:'Synchronisieren (30 s)'},
   syncBanA:{fr:'Mode synchro',en:'Sync mode',de:'Sync-Modus'},
   syncBanB:{fr:"appuyez sur les touches pour reproduire l'état affiché par le climatiseur. Aucun signal n'est envoyé.",
             en:'press the keys to reproduce what the AC shows. Nothing is sent.',
@@ -418,6 +430,8 @@ function fanBars(fan){
   let h=''; for (let i=1;i<=3;i++) h += '<i class="'+(i<=n?'on':'')+'" style="height:'+(2+i*1.7)+'cqw"></i>';
   return h;
 }
+const CLOCK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>';
+const EDIT_SVG = ' <svg class="pencil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
 let syncEnd = 0;
 async function syncWindow(){
   try { await fetch('/api/mute', {method:'POST',
@@ -489,7 +503,15 @@ async function refresh(){
       const tEl = $('#indTimer');
       if (tEl) { const lit = a.timer !== 'off';
         tEl.classList.toggle('on', lit);
-        tEl.innerHTML = '<span class="tclock">⏱</span>' + (lit ? ' '+a.timer_h.toFixed(1)+'h'+(a.timer==='edit'?' ✎':'') : ''); }
+        tEl.innerHTML = '<span class="tclock">'+CLOCK_SVG+'</span>' + (lit ? ' '+a.timer_h.toFixed(1)+'h'+(a.timer==='edit'?EDIT_SVG:'') : ''); }
+
+      // mode-aware affordance: dim controls that don't apply in the current AC state
+      const dimBtn = (b,d)=>{ const el=document.querySelector('[data-b="'+b+'"]'); if (el) el.classList.toggle('dim',!!d); };
+      const off = !a.on, notCool = a.mode!=='cool';
+      dimBtn('mode', off); dimBtn('flap', off);
+      dimBtn('fan', off || a.mode==='dry');           // fan forced auto in dry
+      dimBtn('up', off || notCool); dimBtn('down', off || notCool);   // setpoint = cool only
+      dimBtn('eco', off || notCool); dimBtn('silent', off || notCool); // eco/silent = cool only
     }
   } catch(e){}
 }
