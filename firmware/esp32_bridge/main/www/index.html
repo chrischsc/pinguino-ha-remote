@@ -428,7 +428,10 @@ function applyI18n(){
 async function press(b, el){
   el.classList.add('flash'); setTimeout(()=>el.classList.remove('flash'), 200);
   try { await fetch('/api/press', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'btn='+b}); } catch(e){}
-  setTimeout(refresh, 350);   // reflect the modeled state quickly (esp. during a sync window)
+  // Live taps are paced server-side to the AC's ~1.8 s touch debounce, so a burst is delivered
+  // one press at a time. Poll along that cadence so the modeled value climbs in step with the AC
+  // instead of jumping ahead (the old instant model update drifted past the real unit).
+  [350, 1900, 3700, 5600].forEach(t => setTimeout(refresh, t));
 }
 
 // ---- AC display helpers (manual icons) + sync window ----
