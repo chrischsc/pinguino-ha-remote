@@ -110,22 +110,25 @@ bool uart_link_will_model(void)
 bool uart_link_press(const char *btn)
 {
     if (!uart_link_valid_btn(btn)) return false;
-    // Atomically claim the press: register it only if a full gap has elapsed since the last one,
-    // stamping under the lock. Both the web handler and the HA worker funnel through here, so the
-    // check-and-stamp being atomic is what stops a tap + a worker press double-firing in the gap.
     int64_t now = esp_timer_get_time();
-    portENTER_CRITICAL(&s_press_mux);
-    bool too_soon = (now - s_last_press_us) < (int64_t)UART_LINK_PRESS_GAP_MS * 1000;
-    if (!too_soon) s_last_press_us = now;
-    portEXIT_CRITICAL(&s_press_mux);
-    if (too_soon) return false;                       // within the AC's debounce -> coalesced, drop
-
     bool muted = now < s_mute_until_us;
     if (!muted) {
+        // Relayed press: atomically claim it only if a full gap has elapsed since the last relayed
+        // one, stamping under the lock. Both the web handler and the HA worker funnel through here,
+        // so the atomic check-and-stamp is what stops a tap + a worker press double-firing in the
+        // gap. The timestamp tracks relayed presses only — muted ones never reach the AC.
+        portENTER_CRITICAL(&s_press_mux);
+        bool too_soon = (now - s_last_press_us) < (int64_t)UART_LINK_PRESS_GAP_MS * 1000;
+        if (!too_soon) s_last_press_us = now;
+        portEXIT_CRITICAL(&s_press_mux);
+        if (too_soon) return false;                   // within the AC's debounce -> coalesced, drop
+
         char line[32];
         int n = snprintf(line, sizeof(line), "press %s\n", btn);
         uart_write_bytes(LINK_UART, line, n);
     }
+    // In a sync window nothing is sent to the AC, so there's no debounce to honour: model-only
+    // presses always register, letting the user re-align the model as fast as they tap.
     bool model = muted || (s_effective == NRF_READY);
     ESP_LOGI(TAG, "%s press %s%s", muted ? "(sync, model-only)" : "-> nRF:", btn,
              model ? "" : " [no relay — model unchanged]");
