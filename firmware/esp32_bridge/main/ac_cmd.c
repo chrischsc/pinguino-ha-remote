@@ -108,7 +108,9 @@ static void enqueue(const ac_req_t *r) { if (s_q) xQueueSend(s_q, r, 0); }
 
 bool ac_cmd_press(const char *btn)
 {
-    if (!btn || !btn[0] || !s_q) return false;
+    // Validate up front (same check uart_link_press would do) so a typo returns {"ok":false}
+    // and never costs a queue slot + a PRESS_GAP_MS idle in the worker.
+    if (!s_q || !btn || !uart_link_valid_btn(btn)) return false;
     ac_req_t r = { .kind = REQ_RAW };
     strlcpy(r.name, btn, sizeof(r.name));
     return xQueueSend(s_q, &r, 0) == pdTRUE;
