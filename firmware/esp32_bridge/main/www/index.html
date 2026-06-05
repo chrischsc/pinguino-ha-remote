@@ -110,10 +110,12 @@
     background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,.02) 70%,transparent);
     pointer-events:none; mix-blend-mode:screen; }
 
-  .top-row { position:absolute; top:11%; left:7%; right:7%; display:grid;
-    grid-template-columns:repeat(4,1fr); gap:5%; justify-items:center; z-index:2; }
+  /* top row spans only the two pills below (flap/silent/fan/timer above
+     eco-mode + up/down); power sits alone on the right with nothing above it */
+  .top-row { position:absolute; top:11%; left:7%; right:27%; display:grid;
+    grid-template-columns:repeat(4,1fr); gap:4%; justify-items:center; z-index:2; }
   .middle-row { position:absolute; top:35.5%; left:7%; right:7%; display:grid;
-    grid-template-columns:1.3fr 1.05fr .5fr; align-items:center; gap:4%; z-index:2; }
+    grid-template-columns:1.2fr 1fr .62fr; align-items:center; gap:4%; z-index:2; }
 
   .key { -webkit-appearance:none; appearance:none; font:inherit; color:var(--ink); cursor:pointer; padding:0; transition:.12s; }
   .key:focus-visible { outline:2px solid var(--cool); outline-offset:3px; }
@@ -126,10 +128,11 @@
   .circle-button:active, .power-button:active, .circle-button.flash, .power-button.flash {
     background:rgba(56,189,248,.22); border-color:var(--cool); }
 
-  /* unified Lucide icon set (24x24 grid, proportional 2px stroke) */
-  .icon { width:52%; height:52%; stroke:var(--ink); fill:none; stroke-width:2;
+  /* photo-faithful De'Longhi glyphs (100x100 grid, proportional stroke) */
+  .icon { width:62%; height:62%; stroke:var(--ink); fill:none; stroke-width:5;
           stroke-linecap:round; stroke-linejoin:round; }
-  .icon.leaf, .icon.power { width:50%; height:50%; }   /* denser glyphs read larger */
+  .icon.eco { width:66%; height:66%; }
+  .icon.power { width:58%; height:58%; stroke-width:5.5; }
 
   .pill-control, .split-control { position:relative; height:clamp(46px,13cqw,112px);
     border:.5cqw solid rgba(246,248,251,.92); border-radius:999px; display:grid;
@@ -143,8 +146,8 @@
   .half:hover { background:rgba(56,189,248,.14); }
   .half:active, .half.flash { background:rgba(56,189,248,.28); }
   .half.mode-label { font-size:clamp(13px,4.4cqw,39px); font-weight:500; letter-spacing:.04em; }
-  .chevron { width:clamp(20px,5.6cqw,48px); height:clamp(20px,5.6cqw,48px); stroke:var(--ink);
-    stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round; fill:none; }
+  .chevron { width:clamp(18px,5cqw,44px); height:clamp(18px,5cqw,44px); stroke:var(--ink);
+    stroke-width:6; stroke-linecap:round; stroke-linejoin:round; fill:none; }
 
   /* the little "screen" in the freed space below the buttons */
   .screen { position:absolute; left:6%; right:6%; bottom:3.5%; height:40%; z-index:2;
@@ -193,41 +196,41 @@
 
       <section class="top-row">
         <button type="button" class="key circle-button" data-b="flap" title="Flap / Swing" aria-label="Flap">
-          <svg class="icon" viewBox="0 0 24 24"><path d="M3 12h18"/><path d="m8 8 4-4 4 4"/><path d="m8 16 4 4 4-4"/></svg>
+          <svg class="icon" viewBox="0 0 100 100"><path d="M48 30 L30 50 L48 70"/><path d="M60 33 Q73 50 60 67"/><path d="M53 39 L60 31 L68 38"/><path d="M53 61 L60 69 L68 62"/></svg>
         </button>
 
         <button type="button" class="key circle-button" data-b="silent" title="Silent" aria-label="Silent">
-          <svg class="icon" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></svg>
+          <svg class="icon" viewBox="0 0 100 100"><path d="M50 28 Q65 28 66 44 L76 54 L66 58 Q68 65 58 66 L59 76"/><path d="M30 64 V51 M38 64 V46 M46 64 V50"/><path d="M26 64 Q26 73 36 73 H48 Q54 73 54 65"/></svg>
         </button>
 
         <button type="button" class="key circle-button" data-b="fan" title="Fan" aria-label="Fan">
-          <svg class="icon" viewBox="0 0 24 24"><path d="M10.827 16.379a6.082 6.082 0 0 1-8.618-7.002l5.412 1.45a6.082 6.082 0 0 1 7.002-8.618l-1.45 5.412a6.082 6.082 0 0 1 8.618 7.002l-5.412-1.45a6.082 6.082 0 0 1-7.002 8.618l1.45-5.412Z"/><path d="M12 12v.01"/></svg>
+          <svg class="icon fan" viewBox="0 0 100 100"><path d="M50 50 C37 40 36 23 48 23 C60 23 59 41 50 50 Z"/><path d="M50 50 C60 37 77 36 77 48 C77 60 59 59 50 50 Z"/><path d="M50 50 C63 60 64 77 52 77 C40 77 41 59 50 50 Z"/><path d="M50 50 C40 63 23 64 23 52 C23 40 41 41 50 50 Z"/><circle cx="50" cy="50" r="4.5"/></svg>
         </button>
 
         <button type="button" class="key circle-button" data-b="timer" title="Timer" aria-label="Timer">
-          <svg class="icon" viewBox="0 0 24 24"><line x1="10" x2="14" y1="2" y2="2"/><line x1="12" x2="15" y1="14" y2="11"/><circle cx="12" cy="14" r="8"/></svg>
+          <svg class="icon" viewBox="0 0 100 100"><circle cx="50" cy="52" r="30"/><path d="M50 52 L50 33 M50 52 L64 59"/></svg>
         </button>
       </section>
 
       <section class="middle-row">
         <div class="pill-control">
           <button type="button" class="key half" data-b="eco" title="Eco" aria-label="Eco">
-            <svg class="icon leaf" viewBox="0 0 24 24"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/></svg>
+            <svg class="icon eco" viewBox="0 0 100 100"><path d="M40 50 L62 30 L84 50"/><path d="M72 40 V32 H80 V47"/><path d="M46 46 V78 H78 V46"/><path d="M40 56 C28 60 27 73 37 78 C49 74 50 60 40 56 Z"/><path d="M37 77 L41 58"/></svg>
           </button>
           <button type="button" class="key half mode-label" data-b="mode" title="Mode" aria-label="Mode">MODE</button>
         </div>
 
         <div class="split-control">
           <button type="button" class="key half" data-b="down" title="Down" aria-label="Down">
-            <svg class="chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+            <svg class="chevron" viewBox="0 0 100 100"><path d="M28 40 L50 62 L72 40"/></svg>
           </button>
           <button type="button" class="key half" data-b="up" title="Up" aria-label="Up">
-            <svg class="chevron" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg>
+            <svg class="chevron" viewBox="0 0 100 100"><path d="M28 60 L50 38 L72 60"/></svg>
           </button>
         </div>
 
         <button type="button" class="key power-button" data-b="power" title="Power" aria-label="Power">
-          <svg class="icon power" viewBox="0 0 24 24"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/></svg>
+          <svg class="icon power" viewBox="0 0 100 100"><path d="M50 22 V48"/><path d="M33 34 A30 30 0 1 0 67 34"/></svg>
         </button>
       </section>
 
