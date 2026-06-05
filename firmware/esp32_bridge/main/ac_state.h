@@ -27,7 +27,7 @@ typedef enum { AC_FAN_MIN  = 0, AC_FAN_MED = 1, AC_FAN_MAX = 2, AC_FAN_AUTO = 3 
 #define TIMER_OFF       0
 #define TIMER_EDIT      1
 #define TIMER_RUN       2
-#define TIMER_DEF_HALFH 12   // 6.0 h (value when activated from OFF)
+#define TIMER_DEF_HALFH 2    // 1.0 h, cold-start only; the last-set value persists thereafter
 #define TIMER_MIN_HALFH 1    // 0.5 h
 #define TIMER_MAX_HALFH 48   // 24 h
 

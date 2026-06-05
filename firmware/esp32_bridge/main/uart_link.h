@@ -1,5 +1,6 @@
 #pragma once
 #include <stdbool.h>
+#include <stdint.h>
 
 // Link to the nRF52840 emulator over UART. For now sends the same text grammar as the
 // emulator's serial CLI ("press <btn>\n"); a framed [SOF][LEN][SEQ][TYPE][CRC] protocol with
@@ -27,6 +28,7 @@ bool uart_link_press(const char *btn);   // returns false if btn invalid
 bool uart_link_valid_btn(const char *btn); // true if btn is an accepted button name
 void uart_link_mute(int seconds);        // sync window: model-only presses, nothing sent, for N s
 int  uart_link_mute_secs(void);          // seconds remaining in the sync window (0 = sending)
+int64_t uart_link_since_press_us(void);  // microseconds since the last registered press (web debounce)
 bool uart_link_ready(void);              // emulator bonded + HID-ready (a press reaches the AC)
 bool uart_link_will_model(void);         // a press would update the model (relay ready OR syncing)
 void uart_link_env(float temp_c, float humidity, float pressure_hpa); // -> "env <t> <h> <p>\n"

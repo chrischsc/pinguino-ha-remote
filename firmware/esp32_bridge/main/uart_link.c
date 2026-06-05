@@ -71,6 +71,11 @@ bool uart_link_valid_btn(const char *btn)
 // user can re-align the model to the AC's real display by pressing the remote without actuating.
 static int64_t s_mute_until_us;
 
+// Timestamp of the last registered press (relayed or model-only). The web handler uses it to drop
+// rapid taps, mirroring the AC's ~1.5 s capacitive-touch debounce (which coalesces fast taps).
+static int64_t s_last_press_us;
+int64_t uart_link_since_press_us(void) { return esp_timer_get_time() - s_last_press_us; }
+
 void uart_link_mute(int seconds)
 {
     if (seconds < 0) seconds = 0;
@@ -97,6 +102,7 @@ bool uart_link_will_model(void)
 bool uart_link_press(const char *btn)
 {
     if (!uart_link_valid_btn(btn)) return false;
+    s_last_press_us = esp_timer_get_time();           // stamp for the web debounce (any registered press)
     bool muted = esp_timer_get_time() < s_mute_until_us;
     if (!muted) {
         char line[32];

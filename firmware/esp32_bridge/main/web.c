@@ -134,17 +134,16 @@ static esp_err_t h_press(httpd_req_t *req)
         char q[48]; if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK)
             httpd_query_key_value(q, "btn", btn, sizeof(btn));
     }
+    // Drop taps closer than the AC's ~1.5 s capacitive-touch debounce rather than queueing them:
+    // the AC coalesces such rapid taps, so registering each would drift the model past the unit.
+    // A dropped tap returns {"ok":false} and changes nothing. (HA target sequences are paced
+    // separately by the ac_cmd worker, comfortably above this window.)
+    #define WEB_PRESS_DEBOUNCE_US (1500 * 1000)
     bool ok;
-    if (!btn[0]) {
+    if (!btn[0] || uart_link_since_press_us() < WEB_PRESS_DEBOUNCE_US)
         ok = false;
-    } else if (uart_link_mute_secs() > 0 || !uart_link_ready()) {
-        // Sync window (model-only) or offline (nothing relayed): apply now, no debounce to honour.
+    else
         ok = uart_link_press(btn);
-    } else {
-        // Live: route through the paced worker so rapid taps are spaced to the AC's ~1.5 s touch
-        // debounce. Firing them back-to-back made the model outrun the AC (e.g. the timer drifting).
-        ok = ac_cmd_press(btn);
-    }
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, ok ? "{\"ok\":true}" : "{\"ok\":false}");
 }
