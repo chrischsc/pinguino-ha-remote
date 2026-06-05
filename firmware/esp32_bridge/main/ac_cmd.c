@@ -9,10 +9,9 @@
 
 static const char *TAG = "accmd";
 
-// The AC's capacitive touch buttons debounce ~1.5 s: presses closer than that are dropped,
-// which silently desyncs an open-loop multi-press sequence (e.g. fan->dry needs two "mode"
-// presses). Pace like a human, comfortably above the debounce. Raise this if drift persists.
-#define PRESS_GAP_MS 1800
+// The AC's capacitive touch buttons debounce ~1.5 s: presses closer than that are dropped, which
+// silently desyncs an open-loop multi-press sequence (e.g. fan->dry needs two "mode" presses).
+// Pace to UART_LINK_PRESS_GAP_MS, comfortably above the debounce.
 #define MAX_STEPS    40       // hard cap on any single sequence (temp can need many)
 
 typedef enum { REQ_MODE, REQ_TEMP, REQ_FAN, REQ_SW } req_kind_t;
@@ -27,8 +26,13 @@ static QueueHandle_t s_q;
 
 static void press(const char *b)
 {
+    // Wait until a full gap has elapsed since the LAST registered press — which includes a web tap
+    // that interleaved between two worker presses (uart_link stamps every press). Pacing *before*
+    // the press, off the shared timestamp, keeps the AC-registered gap correct in that case; a
+    // fixed delay-after would let the worker fire ~0.2 s behind such a tap and be coalesced away.
+    int64_t wait_us = (int64_t)UART_LINK_PRESS_GAP_MS * 1000 - uart_link_since_press_us();
+    if (wait_us > 0) vTaskDelay(pdMS_TO_TICKS((TickType_t)(wait_us / 1000) + 1));
     uart_link_press(b);                       // relays to nRF AND updates ac_state
-    vTaskDelay(pdMS_TO_TICKS(PRESS_GAP_MS));
 }
 
 // A press only updates the model when the relay is ready (or we're syncing). If neither, the AC
