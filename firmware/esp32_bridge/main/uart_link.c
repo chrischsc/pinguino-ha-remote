@@ -110,14 +110,16 @@ bool uart_link_will_model(void)
 bool uart_link_press(const char *btn)
 {
     if (!uart_link_valid_btn(btn)) return false;
-    int64_t now = esp_timer_get_time();
-    bool muted = now < s_mute_until_us;
+    bool muted = esp_timer_get_time() < s_mute_until_us;
     if (!muted) {
         // Relayed press: atomically claim it only if a full gap has elapsed since the last relayed
         // one, stamping under the lock. Both the web handler and the HA worker funnel through here,
         // so the atomic check-and-stamp is what stops a tap + a worker press double-firing in the
-        // gap. The timestamp tracks relayed presses only — muted ones never reach the AC.
+        // gap. The timestamp tracks relayed presses only — muted ones never reach the AC. Read the
+        // clock *inside* the lock so a preemption before we enter can't stamp a stale (early) time
+        // and let the next caller think the gap already elapsed.
         portENTER_CRITICAL(&s_press_mux);
+        int64_t now = esp_timer_get_time();
         bool too_soon = (now - s_last_press_us) < (int64_t)UART_LINK_PRESS_GAP_MS * 1000;
         if (!too_soon) s_last_press_us = now;
         portEXIT_CRITICAL(&s_press_mux);
