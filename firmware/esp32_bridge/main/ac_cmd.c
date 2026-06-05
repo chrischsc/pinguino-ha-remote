@@ -92,7 +92,11 @@ static void worker(void *arg)
             case REQ_TEMP: do_temp(r.ival);                  break;
             case REQ_FAN:  do_fan((ac_fan_t)r.ival);         break;
             case REQ_SW:   do_switch(r.name, r.ival != 0);   break;
-            case REQ_RAW:  if (uart_link_will_model()) press(r.name); break;
+            // Raw entries are only ever queued for *live* taps (h_press sends sync/offline
+            // presses straight through). Deliver one only if it can still reach the AC now: if a
+            // sync window opened or the link dropped while it waited, discard it rather than fold
+            // it into the model alone (model would advance while the AC never moves -> drift).
+            case REQ_RAW:  if (uart_link_ready() && uart_link_mute_secs() == 0) press(r.name); break;
         }
     }
 }
