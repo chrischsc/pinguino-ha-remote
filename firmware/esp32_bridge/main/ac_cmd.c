@@ -14,6 +14,8 @@ static const char *TAG = "accmd";
 // presses). Pace like a human, comfortably above the debounce. Raise this if drift persists.
 #define PRESS_GAP_MS 1800
 #define MAX_STEPS    40       // hard cap on any single sequence (temp can need many)
+#define QUEUE_DEPTH  16
+#define HA_RESERVE    6       // queue slots kept free for HA cmds so a tap flood can't starve them
 
 typedef enum { REQ_MODE, REQ_TEMP, REQ_FAN, REQ_SW, REQ_RAW } req_kind_t;
 typedef struct {
@@ -104,7 +106,7 @@ static void worker(void *arg)
 void ac_cmd_init(void)
 {
     // Depth covers a burst of raw remote taps queued behind an in-flight HA sequence.
-    s_q = xQueueCreate(16, sizeof(ac_req_t));
+    s_q = xQueueCreate(QUEUE_DEPTH, sizeof(ac_req_t));
     xTaskCreate(worker, "ac_cmd", 3072, NULL, 4, NULL);
 }
 
@@ -115,6 +117,10 @@ bool ac_cmd_press(const char *btn)
     // Validate up front (same check uart_link_press would do) so a typo returns {"ok":false}
     // and never costs a queue slot + a PRESS_GAP_MS idle in the worker.
     if (!s_q || !btn || !uart_link_valid_btn(btn)) return false;
+    // Raw taps share s_q with HA climate/switch commands. Keep HA_RESERVE slots free so a flood
+    // of taps can't fill the queue and silently drop an HA command; excess taps are dropped here
+    // (the AC's touch debounce would coalesce them anyway).
+    if (uxQueueSpacesAvailable(s_q) <= HA_RESERVE) return false;
     ac_req_t r = { .kind = REQ_RAW };
     strlcpy(r.name, btn, sizeof(r.name));
     return xQueueSend(s_q, &r, 0) == pdTRUE;
