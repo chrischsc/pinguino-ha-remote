@@ -34,6 +34,7 @@ static void press(const char *b)
     // re-wait and retry so the sequence doesn't silently drop a step. Bounded so non-stop
     // interleaving taps can't hang the worker.
     for (int attempt = 0; attempt < 10; attempt++) {
+        if (!uart_link_will_model()) return;  // link dropped / not commandable — stop; do_* re-checks
         int64_t wait_us = (int64_t)UART_LINK_PRESS_GAP_MS * 1000 - uart_link_since_press_us();
         if (wait_us > 0) vTaskDelay(pdMS_TO_TICKS((TickType_t)(wait_us / 1000) + 1));
         if (uart_link_press(b)) return;       // relayed + folded into ac_state
