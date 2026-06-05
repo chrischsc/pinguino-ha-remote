@@ -507,10 +507,11 @@ async function refresh(){
 
       // mode-aware affordance: dim controls that don't apply in the current AC state
       const dimBtn = (b,d)=>{ const el=document.querySelector('[data-b="'+b+'"]'); if (el) el.classList.toggle('dim',!!d); };
-      const off = !a.on, notCool = a.mode!=='cool';
+      const off = !a.on, notCool = a.mode!=='cool', editing = a.timer==='edit';
       dimBtn('mode', off); dimBtn('flap', off);
       dimBtn('fan', off || a.mode==='dry');           // fan forced auto in dry
-      dimBtn('up', off || notCool); dimBtn('down', off || notCool);   // setpoint = cool only
+      // up/down set the timer while editing (any state), else the setpoint (cool only)
+      dimBtn('up', !editing && (off || notCool)); dimBtn('down', !editing && (off || notCool));
       dimBtn('eco', off || notCool); dimBtn('silent', off || notCool); // eco/silent = cool only
     }
   } catch(e){}
