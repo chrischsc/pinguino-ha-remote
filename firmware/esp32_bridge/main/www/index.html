@@ -41,9 +41,17 @@
   .ac-state .off { color:var(--mut); }
 
   /* ---- lit buttons reflecting modeled AC state ---- */
-  .circle-button.lit, .half.lit {
+  .circle-button.lit {
     background:rgba(56,189,248,.26)!important; border-color:var(--cool)!important;
     box-shadow:0 0 0 .4cqw rgba(56,189,248,.5), inset 0 0 2.6cqw rgba(56,189,248,.35); }
+  /* halves live inside a pill: a contained inset highlight, never an outer ring that
+     would bleed across the central divider line */
+  .half.lit {
+    background:rgba(56,189,248,.30)!important;
+    box-shadow:inset 0 0 2.4cqw rgba(56,189,248,.4)!important; }
+  /* round only the outer corner of each half so the fill meets the divider squarely */
+  .pill-control .half:first-child, .split-control .half:first-child { border-radius:999px 0 0 999px; }
+  .pill-control .half:last-child,  .split-control .half:last-child  { border-radius:0 999px 999px 0; }
   .power-button.on {
     background:rgba(52,211,153,.22); border-color:#34d399;
     box-shadow:0 0 0 .4cqw rgba(52,211,153,.5), inset 0 0 2.6cqw rgba(52,211,153,.3); }
@@ -61,14 +69,26 @@
   .ac-row2 { display:flex; align-items:center; gap:2.4cqw; font-size:clamp(8px,2cqw,14px); }
   .ac-row2 .ind { color:#46525e; letter-spacing:.06em; font-weight:700; transition:.2s; }
   .ac-row2 .ind.on { color:#34d399; text-shadow:0 0 8px rgba(52,211,153,.6); }
-  .ac-row2 .tclock { font-size:1.4em; line-height:1; vertical-align:-0.14em; }
+  .ac-row2 .tclock { display:inline-flex; vertical-align:-0.18em; }
+  .ac-row2 .tclock svg { width:1.45em; height:1.45em; }
+  .ac-row2 .pencil { width:1em; height:1em; vertical-align:-0.12em; }
   /* digital barometer (temp / humidity / pressure) row inside the screen */
-  .baro { display:flex; justify-content:space-between; align-items:baseline; gap:2cqw; }
-  .baro .cell { display:flex; align-items:baseline; gap:.7cqw; }
-  .baro .ic { font-size:clamp(9px,2.4cqw,16px); }
+  .baro { display:flex; justify-content:space-between; align-items:center; gap:2cqw; }
+  .baro .cell { display:flex; align-items:center; gap:1cqw; }
+  .baro .ic { display:inline-flex; color:#6fa8c4; }
+  .baro .ic svg { width:clamp(11px,3cqw,18px); height:clamp(11px,3cqw,18px); }
   .baro b { font-size:clamp(13px,4cqw,30px); font-weight:600; color:#e8f9ff;
-            text-shadow:0 0 8px rgba(56,189,248,.4); }
-  .baro small { font-size:clamp(7px,1.7cqw,12px); color:#7fb8cf; }
+            text-shadow:0 0 8px rgba(56,189,248,.4); line-height:1; }
+  .baro small { font-size:clamp(7px,1.7cqw,12px); color:#7fb8cf; align-self:flex-end; margin-bottom:.4cqw; }
+
+  /* mode-aware affordance: dim controls that don't apply in the current AC state */
+  .key.dim { opacity:.28; }
+  .key { transition:opacity .2s, background .12s, border-color .12s, box-shadow .12s; }
+  .sync-btn svg { width:1em; height:1em; vertical-align:-0.12em; margin-right:.4em; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration:.001ms !important; animation-duration:.001ms !important; }
+  }
   .sync-banner { margin-top:10px; padding:10px 12px; border-radius:8px; font-size:13px;
     background:rgba(251,191,36,.12); border:1px solid rgba(251,191,36,.45); color:#fde68a; }
 
@@ -112,7 +132,9 @@
 
   .pill-control, .split-control { position:relative; height:clamp(46px,13cqw,112px);
     border:.5cqw solid rgba(246,248,251,.92); border-radius:999px; display:grid;
-    grid-template-columns:1fr 1fr; align-items:center; background:rgba(0,0,0,.04); }
+    grid-template-columns:1fr 1fr; align-items:center; background:rgba(0,0,0,.04);
+    overflow:hidden; }   /* clip the lit/hover fill inside the rounded border */
+  .half:focus-visible { outline-offset:-2px; }   /* inset ring so focus stays visible despite clip */
   .pill-control::before, .split-control::before { content:""; position:absolute; left:50%; top:20%; bottom:20%;
     width:1.5px; background:rgba(255,255,255,.16); transform:translateX(-50%); z-index:3; pointer-events:none; }
   .half { position:relative; z-index:2; display:grid; place-items:center; height:100%; background:transparent;
@@ -142,9 +164,17 @@
     .middle-row { top:34%; }
     .screen { height:40%; }
   }
-  /* header language switcher */
+  /* header language switcher + settings toggle */
   #langSel { width:auto; margin:0; padding:4px 6px; font-size:12px; border-radius:6px;
     border:1px solid #2b3543; background:#0d1117; color:var(--fg); }
+  .hicon { width:auto; margin:0; padding:5px; border-radius:6px; border:1px solid #2b3543;
+    background:#0d1117; color:var(--mut); cursor:pointer; display:inline-flex; align-items:center; transition:.2s; }
+  .hicon:hover { color:var(--fg); border-color:#3a4754; }
+  .hicon.active { color:var(--cool); border-color:var(--cool); }
+  .hicon svg { width:18px; height:18px; }
+  #settings { display:none; }
+  #settings.open { display:block; animation:settingsIn .2s ease-out; }
+  @keyframes settingsIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }
 </style>
 </head>
 <body>
@@ -152,6 +182,7 @@
   <span id="dot"></span>
   <h1>Ganymede Bridge</h1>
   <span id="st" class="small" style="margin-left:auto"></span>
+  <button id="settingsBtn" class="hicon" aria-label="Settings" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
   <select id="langSel" aria-label="Language"><option value="fr">FR</option><option value="en">EN</option><option value="de">DE</option></select>
 </header>
 <main>
@@ -227,12 +258,12 @@
           <span class="ind" id="indEco">ECO</span>
           <span class="ind" id="indSilent">SILENT</span>
           <span class="ind" id="indSwing">SWING</span>
-          <span class="ind" id="indTimer"><span class="tclock">⏱</span></span>
+          <span class="ind" id="indTimer"><span class="tclock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg></span></span>
         </div>
         <div class="baro">
-          <span class="cell"><span class="ic">🌡</span><b id="scrT">--.-</b><small>°C</small></span>
-          <span class="cell"><span class="ic">💧</span><b id="scrH">--</b><small>%</small></span>
-          <span class="cell"><span class="ic">🧭</span><b id="scrP">----</b><small>hPa</small></span>
+          <span class="cell"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg></span><b id="scrT">--.-</b><small>°C</small></span>
+          <span class="cell"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg></span><b id="scrH">--</b><small>%</small></span>
+          <span class="cell"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14l3.5-3.5"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg></span><b id="scrP">----</b><small>hPa</small></span>
         </div>
         <div class="statusbar">
           <div class="grp"><span class="sdot" id="dWifi"></span>Wi-Fi</div>
@@ -249,13 +280,14 @@
       <span data-i18n="syncBanB">appuyez sur les touches pour reproduire l'état affiché par le climatiseur. Aucun signal n'est envoyé.</span>
     </div>
     <div style="display:flex; gap:8px; margin-top:10px">
-      <button class="ui" data-i18n="sync30" onclick="syncWindow()">⟳ Synchroniser (30 s)</button>
+      <button class="ui sync-btn" onclick="syncWindow()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg><span data-i18n="sync30">Synchroniser (30 s)</span></button>
     </div>
     <p class="small" data-i18n="syncHelp" style="margin-top:8px">L'écran reflète l'état modélisé du
       climatiseur (boucle ouverte). En cas de dérive, lancez « Synchroniser » et reproduisez sur les
       touches l'état réellement affiché par le climatiseur — rien n'est envoyé pendant ces 30 s.</p>
   </div>
 
+  <div id="settings">
   <div class="card" id="wifiCard">
     <h2>Wi-Fi</h2>
     <p class="small" id="wifiState"></p>
@@ -315,6 +347,7 @@
       Désapparier efface le lien et le repasse en mode appairage ; mettez ensuite la clim en mode
       appairage (MODE ~10 s). Apparier relance la diffusion si besoin.</p>
   </div>
+  </div>
 </main>
 <script>
 const $ = s => document.querySelector(s);
@@ -322,7 +355,8 @@ const $ = s => document.querySelector(s);
 // ---- i18n (FR/EN/DE), auto from browser, override via the header selector ----
 const I18N = {
   remote:{fr:'Télécommande',en:'Remote',de:'Fernbedienung'},
-  sync30:{fr:'⟳ Synchroniser (30 s)',en:'⟳ Sync (30 s)',de:'⟳ Synchronisieren (30 s)'},
+  settings:{fr:'Réglages',en:'Settings',de:'Einstellungen'},
+  sync30:{fr:'Synchroniser (30 s)',en:'Sync (30 s)',de:'Synchronisieren (30 s)'},
   syncBanA:{fr:'Mode synchro',en:'Sync mode',de:'Sync-Modus'},
   syncBanB:{fr:"appuyez sur les touches pour reproduire l'état affiché par le climatiseur. Aucun signal n'est envoyé.",
             en:'press the keys to reproduce what the AC shows. Nothing is sent.',
@@ -418,6 +452,8 @@ function fanBars(fan){
   let h=''; for (let i=1;i<=3;i++) h += '<i class="'+(i<=n?'on':'')+'" style="height:'+(2+i*1.7)+'cqw"></i>';
   return h;
 }
+const CLOCK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>';
+const EDIT_SVG = ' <svg class="pencil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
 let syncEnd = 0;
 async function syncWindow(){
   try { await fetch('/api/mute', {method:'POST',
@@ -445,6 +481,10 @@ async function refresh(){
     const s = await (await fetch('/api/status')).json();
     $('#dot').className = s.state;
     $('#st').textContent = s.state + (s.ip ? ' · '+s.ip : '');
+
+    // first run with no saved preference: reveal settings while the device needs setup
+    if (!settingsAuto) { settingsAuto = true;
+      if (savedSettings === null && s.state !== 'connected') setSettings(true); }
 
     // screen — barometer (temp / humidity / pressure)
     $('#scrT').textContent = s.bme ? s.temp : '--.-';
@@ -489,7 +529,16 @@ async function refresh(){
       const tEl = $('#indTimer');
       if (tEl) { const lit = a.timer !== 'off';
         tEl.classList.toggle('on', lit);
-        tEl.innerHTML = '<span class="tclock">⏱</span>' + (lit ? ' '+a.timer_h.toFixed(1)+'h'+(a.timer==='edit'?' ✎':'') : ''); }
+        tEl.innerHTML = '<span class="tclock">'+CLOCK_SVG+'</span>' + (lit ? ' '+a.timer_h.toFixed(1)+'h'+(a.timer==='edit'?EDIT_SVG:'') : ''); }
+
+      // mode-aware affordance: dim controls that don't apply in the current AC state
+      const dimBtn = (b,d)=>{ const el=document.querySelector('[data-b="'+b+'"]'); if (el) el.classList.toggle('dim',!!d); };
+      const off = !a.on, notCool = a.mode!=='cool', editing = a.timer==='edit';
+      dimBtn('mode', off); dimBtn('flap', off);
+      dimBtn('fan', off || a.mode==='dry');           // fan forced auto in dry
+      // up/down set the timer while editing (any state), else the setpoint (cool only)
+      dimBtn('up', !editing && (off || notCool)); dimBtn('down', !editing && (off || notCool));
+      dimBtn('eco', off || notCool); dimBtn('silent', off || notCool); // eco/silent = cool only
     }
   } catch(e){}
 }
@@ -598,11 +647,24 @@ async function saveRules(){
 const langSel = $('#langSel');
 langSel.value = L;
 langSel.onchange = () => { L = langSel.value; localStorage.setItem('lang', L);
-  document.documentElement.lang = L; applyI18n();
+  document.documentElement.lang = L; applyI18n(); settingsBtn.title = t('settings');
   if (document.querySelector('#ruleList .rule')) RULES = collectRules();  // keep unsaved edits
   renderRules(); refresh(); };
 
-applyI18n();
+// collapsible settings panel (toggled by the header gear) — remote + Sync stay always visible
+const settingsBtn = $('#settingsBtn');
+function setSettings(open, persist=true){
+  $('#settings').classList.toggle('open', open);
+  settingsBtn.classList.toggle('active', open);
+  settingsBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (persist) localStorage.setItem('settings', open ? 'open' : 'closed');
+}
+const savedSettings = localStorage.getItem('settings');
+let settingsAuto = false;
+settingsBtn.onclick = () => setSettings(!$('#settings').classList.contains('open'));
+setSettings(savedSettings === 'open', false);   // default collapsed
+
+applyI18n(); settingsBtn.title = t('settings');
 loadPins();
 loadRules();
 refresh(); setInterval(refresh, 3000);
