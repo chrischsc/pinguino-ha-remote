@@ -11,7 +11,7 @@
 #define NVS_VER 3          // bumped: timer_on -> timer_state (3-state)
 
 // In EDIT, this much idle (no timer/up/down) confirms the value and starts the timer (RUN).
-#define TIMER_EDIT_US (3 * 1000000)
+#define TIMER_EDIT_US (4 * 1000000)
 
 static const char *TAG = "acstate";
 
@@ -93,13 +93,10 @@ bool ac_state_apply(const char *btn)
     if (!strcmp(btn, "power")) {
         s.on = !s.on;
     } else if (!strcmp(btn, "timer")) {
-        if (s.timer_state == TIMER_OFF) {              // activate: show settings at 6.0 h
-            s.timer_state = TIMER_EDIT; s.timer_halfh = TIMER_DEF_HALFH;
-            s_timer_edit_until_us = now + TIMER_EDIT_US;
-        } else if (s.timer_state == TIMER_EDIT) {      // second tap while editing: disable
+        if (s.timer_state == TIMER_EDIT) {             // second tap while editing: disable
             s.timer_state = TIMER_OFF;
-        } else {                                       // RUN: reopen settings at the last value
-            s.timer_state = TIMER_EDIT;
+        } else {                                       // OFF or RUN -> open settings; keep the last
+            s.timer_state = TIMER_EDIT;                // value (no forced default), the user adjusts
             s_timer_edit_until_us = now + TIMER_EDIT_US;
         }
     } else if (editing && (!strcmp(btn, "up") || !strcmp(btn, "down"))) {

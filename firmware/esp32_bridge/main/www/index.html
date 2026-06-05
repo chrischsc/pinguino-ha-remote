@@ -41,17 +41,25 @@
   .ac-state .off { color:var(--mut); }
 
   /* ---- lit buttons reflecting modeled AC state ---- */
-  .circle-button.lit, .half.lit {
+  .circle-button.lit {
     background:rgba(56,189,248,.26)!important; border-color:var(--cool)!important;
     box-shadow:0 0 0 .4cqw rgba(56,189,248,.5), inset 0 0 2.6cqw rgba(56,189,248,.35); }
+  /* halves live inside a pill: a contained inset highlight, never an outer ring that
+     would bleed across the central divider line */
+  .half.lit {
+    background:rgba(56,189,248,.30)!important;
+    box-shadow:inset 0 0 2.4cqw rgba(56,189,248,.4)!important; }
+  /* round only the outer corner of each half so the fill meets the divider squarely */
+  .pill-control .half:first-child, .split-control .half:first-child { border-radius:999px 0 0 999px; }
+  .pill-control .half:last-child,  .split-control .half:last-child  { border-radius:0 999px 999px 0; }
   .power-button.on {
     background:rgba(52,211,153,.22); border-color:#34d399;
     box-shadow:0 0 0 .4cqw rgba(52,211,153,.5), inset 0 0 2.6cqw rgba(52,211,153,.3); }
   /* ---- AC status "display" inside the remote screen ---- */
   .ac-top { display:flex; align-items:center; gap:3cqw; }
-  .ac-mode { display:inline-flex; font-size:clamp(16px,6cqw,46px); color:#bfeaff;
+  .ac-mode { display:inline-flex; font-size:clamp(15px,5.4cqw,42px); color:#bfeaff;
              filter:drop-shadow(0 0 6px rgba(56,189,248,.5)); min-width:1.2em; }
-  .ac-set b { font-size:clamp(18px,6.6cqw,54px); font-weight:600; color:#e8f9ff;
+  .ac-set b { font-size:clamp(17px,6cqw,48px); font-weight:600; color:#e8f9ff;
               text-shadow:0 0 10px rgba(56,189,248,.45); font-variant-numeric:tabular-nums; }
   .ac-set small { font-size:clamp(8px,2cqw,15px); color:#7fb8cf; }
   .ac-fan { display:inline-flex; align-items:flex-end; gap:.5cqw; margin-left:auto; height:7cqw; }
@@ -61,14 +69,29 @@
   .ac-row2 { display:flex; align-items:center; gap:2.4cqw; font-size:clamp(8px,2cqw,14px); }
   .ac-row2 .ind { color:#46525e; letter-spacing:.06em; font-weight:700; transition:.2s; }
   .ac-row2 .ind.on { color:#34d399; text-shadow:0 0 8px rgba(52,211,153,.6); }
-  .ac-row2 .tclock { font-size:1.4em; line-height:1; vertical-align:-0.14em; }
-  /* digital barometer (temp / humidity / pressure) row inside the screen */
-  .baro { display:flex; justify-content:space-between; align-items:baseline; gap:2cqw; }
-  .baro .cell { display:flex; align-items:baseline; gap:.7cqw; }
-  .baro .ic { font-size:clamp(9px,2.4cqw,16px); }
+  .ac-row2 .tclock { display:inline-flex; vertical-align:-0.18em; }
+  .ac-row2 .tclock svg { width:1.45em; height:1.45em; }
+  .ac-row2 .pencil { width:1em; height:1em; vertical-align:-0.12em; }
+  /* digital barometer (temp / humidity / pressure) — real room readings, bracketed
+     with hairline rules to set them apart from the modeled AC state above */
+  .baro { display:flex; justify-content:space-between; align-items:center; gap:2cqw;
+          padding:1.5cqw 0;
+          border-top:1px solid rgba(56,189,248,.16); border-bottom:1px solid rgba(56,189,248,.16); }
+  .baro .cell { display:flex; align-items:center; gap:1cqw; }
+  .baro .ic { display:inline-flex; color:#6fa8c4; }
+  .baro .ic svg { width:clamp(11px,3cqw,18px); height:clamp(11px,3cqw,18px); }
   .baro b { font-size:clamp(13px,4cqw,30px); font-weight:600; color:#e8f9ff;
-            text-shadow:0 0 8px rgba(56,189,248,.4); }
-  .baro small { font-size:clamp(7px,1.7cqw,12px); color:#7fb8cf; }
+            text-shadow:0 0 8px rgba(56,189,248,.4); line-height:1; }
+  .baro small { font-size:clamp(7px,1.7cqw,12px); color:#7fb8cf; align-self:flex-end; margin-bottom:.4cqw; }
+
+  /* mode-aware affordance: dim controls that don't apply in the current AC state */
+  .key.dim { opacity:.28; }
+  .key { transition:opacity .2s, background .12s, border-color .12s, box-shadow .12s; }
+  .sync-btn svg { width:1em; height:1em; vertical-align:-0.12em; margin-right:.4em; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration:.001ms !important; animation-duration:.001ms !important; }
+  }
   .sync-banner { margin-top:10px; padding:10px 12px; border-radius:8px; font-size:13px;
     background:rgba(251,191,36,.12); border:1px solid rgba(251,191,36,.45); color:#fde68a; }
 
@@ -87,10 +110,12 @@
     background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,.02) 70%,transparent);
     pointer-events:none; mix-blend-mode:screen; }
 
-  .top-row { position:absolute; top:11%; left:7%; right:7%; display:grid;
-    grid-template-columns:repeat(4,1fr); gap:5%; justify-items:center; z-index:2; }
+  /* top row spans only the two pills below (flap/silent/fan/timer above
+     eco-mode + up/down); power sits alone on the right with nothing above it */
+  .top-row { position:absolute; top:11%; left:7%; right:27%; display:grid;
+    grid-template-columns:repeat(4,1fr); gap:4%; justify-items:center; z-index:2; }
   .middle-row { position:absolute; top:35.5%; left:7%; right:7%; display:grid;
-    grid-template-columns:1.3fr 1.05fr .5fr; align-items:center; gap:4%; z-index:2; }
+    grid-template-columns:1.2fr 1fr .62fr; align-items:center; gap:4%; z-index:2; }
 
   .key { -webkit-appearance:none; appearance:none; font:inherit; color:var(--ink); cursor:pointer; padding:0; transition:.12s; }
   .key:focus-visible { outline:2px solid var(--cool); outline-offset:3px; }
@@ -103,16 +128,22 @@
   .circle-button:active, .power-button:active, .circle-button.flash, .power-button.flash {
     background:rgba(56,189,248,.22); border-color:var(--cool); }
 
-  .icon { width:92%; height:92%; stroke:var(--ink); fill:none; stroke-width:6; stroke-linecap:round; stroke-linejoin:round; vector-effect:non-scaling-stroke; }
-  .icon.fan { width:92%; height:92%; stroke-width:5.4; }
-  .icon.clock { width:88%; height:88%; }
-  .icon.silent { width:92%; height:92%; }
-  .icon.eco { width:78%; height:78%; }
-  .icon.power { width:86%; height:86%; stroke-width:6.5; }
+  /* photo-faithful De'Longhi glyphs (100x100 grid, proportional stroke) */
+  .icon { width:62%; height:62%; stroke:var(--ink); fill:none; stroke-width:5;
+          stroke-linecap:round; stroke-linejoin:round; }
+  .icon.power { width:58%; height:58%; stroke-width:5.5; }
+  /* glyphs traced from the real remote (docs/assets/photos/*.svg) — filled line-art */
+  .glyph { fill:var(--ink); stroke:none; }
+  .glyph.flap { width:52%; height:52%; }
+  .glyph.silent { width:56%; height:56%; }
+  .glyph.fan { width:56%; height:56%; }
+  .glyph.eco { width:62%; height:62%; }
 
   .pill-control, .split-control { position:relative; height:clamp(46px,13cqw,112px);
     border:.5cqw solid rgba(246,248,251,.92); border-radius:999px; display:grid;
-    grid-template-columns:1fr 1fr; align-items:center; background:rgba(0,0,0,.04); }
+    grid-template-columns:1fr 1fr; align-items:center; background:rgba(0,0,0,.04);
+    overflow:hidden; }   /* clip the lit/hover fill inside the rounded border */
+  .half:focus-visible { outline-offset:-2px; }   /* inset ring so focus stays visible despite clip */
   .pill-control::before, .split-control::before { content:""; position:absolute; left:50%; top:20%; bottom:20%;
     width:1.5px; background:rgba(255,255,255,.16); transform:translateX(-50%); z-index:3; pointer-events:none; }
   .half { position:relative; z-index:2; display:grid; place-items:center; height:100%; background:transparent;
@@ -120,15 +151,15 @@
   .half:hover { background:rgba(56,189,248,.14); }
   .half:active, .half.flash { background:rgba(56,189,248,.28); }
   .half.mode-label { font-size:clamp(13px,4.4cqw,39px); font-weight:500; letter-spacing:.04em; }
-  .chevron { width:clamp(16px,4.6cqw,40px); height:clamp(16px,4.6cqw,40px); stroke:var(--ink);
-    stroke-width:7.5; stroke-linecap:round; stroke-linejoin:round; fill:none; }
+  .chevron { width:clamp(18px,5cqw,44px); height:clamp(18px,5cqw,44px); stroke:var(--ink);
+    stroke-width:6; stroke-linecap:round; stroke-linejoin:round; fill:none; }
 
   /* the little "screen" in the freed space below the buttons */
-  .screen { position:absolute; left:6%; right:6%; bottom:5%; height:37%; z-index:2;
-    border-radius:3cqw; padding:1.8cqw 3.4cqw; background:linear-gradient(180deg,#05090f,#020406);
+  .screen { position:absolute; left:6%; right:6%; bottom:3.5%; height:40%; z-index:2;
+    border-radius:3cqw; padding:1.4cqw 3.4cqw; background:linear-gradient(180deg,#05090f,#020406);
     border:1px solid rgba(56,189,248,.22);
     box-shadow:inset 0 0 4cqw rgba(56,189,248,.10), inset 0 1px 0 rgba(255,255,255,.05), 0 1cqw 2cqw rgba(0,0,0,.4);
-    display:flex; flex-direction:column; justify-content:center; gap:1cqw; color:#cfeffb; font-variant-numeric:tabular-nums; }
+    display:flex; flex-direction:column; justify-content:space-between; gap:.6cqw; color:#cfeffb; font-variant-numeric:tabular-nums; }
   .statusbar { display:flex; align-items:center; gap:1cqw; font-size:clamp(9px,2.1cqw,15px); color:#8fb6c8; }
   .statusbar .grp { display:flex; align-items:center; gap:.7cqw; }
   .statusbar .grp+.grp { margin-left:2.4cqw; }
@@ -142,9 +173,17 @@
     .middle-row { top:34%; }
     .screen { height:40%; }
   }
-  /* header language switcher */
+  /* header language switcher + settings toggle */
   #langSel { width:auto; margin:0; padding:4px 6px; font-size:12px; border-radius:6px;
     border:1px solid #2b3543; background:#0d1117; color:var(--fg); }
+  .hicon { width:auto; margin:0; padding:5px; border-radius:6px; border:1px solid #2b3543;
+    background:#0d1117; color:var(--mut); cursor:pointer; display:inline-flex; align-items:center; transition:.2s; }
+  .hicon:hover { color:var(--fg); border-color:#3a4754; }
+  .hicon.active { color:var(--cool); border-color:var(--cool); }
+  .hicon svg { width:18px; height:18px; }
+  #settings { display:none; }
+  #settings.open { display:block; animation:settingsIn .2s ease-out; }
+  @keyframes settingsIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }
 </style>
 </head>
 <body>
@@ -152,6 +191,7 @@
   <span id="dot"></span>
   <h1>Ganymede Bridge</h1>
   <span id="st" class="small" style="margin-left:auto"></span>
+  <button id="settingsBtn" class="hicon" aria-label="Settings" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
   <select id="langSel" aria-label="Language"><option value="fr">FR</option><option value="en">EN</option><option value="de">DE</option></select>
 </header>
 <main>
@@ -161,59 +201,41 @@
 
       <section class="top-row">
         <button type="button" class="key circle-button" data-b="flap" title="Flap / Swing" aria-label="Flap">
-          <svg class="icon" viewBox="0 0 100 100">
-            <path d="M44 31 L28 50 L44 69"/>
-            <path d="M64 29 Q74 50 64 71"/><path d="M57 36 L64 29 L71 36"/><path d="M57 64 L64 71 L71 64"/>
-          </svg>
+          <svg class="glyph flap" viewBox="0 0 160 193"><path d="M128.500000,146.516876 C130.465607,146.917664 132.306015,146.852203 134.124374,147.022293 C138.286972,147.411621 142.071152,150.971085 141.528748,154.395416 C140.889603,158.430344 138.331039,161.061844 134.068695,161.131485 C126.240753,161.259430 118.404236,161.277725 110.579788,161.050049 C105.853874,160.912521 103.512146,158.040512 103.445290,152.616638 C103.357002,145.453949 103.418686,138.286652 103.572136,131.124695 C103.680969,126.045158 106.803146,122.389671 110.699287,122.419701 C114.548019,122.449364 117.620773,126.191704 117.864311,131.189667 C117.920723,132.347321 117.872643,133.510101 117.872643,134.826706 C135.516983,119.244125 137.968277,86.550697 117.867020,64.271088 C117.867020,66.809258 117.995903,68.486015 117.841751,70.136345 C117.451096,74.318764 114.081947,77.888397 110.665741,77.895752 C107.200928,77.903221 103.753860,74.398529 103.627205,70.112389 C103.395966,62.287701 103.302017,54.448433 103.513039,46.625011 C103.646713,41.669025 106.504784,39.164402 111.613663,39.064423 C118.608948,38.927532 125.608810,38.962063 132.606110,39.010418 C137.642441,39.045219 141.359543,41.978390 141.555038,45.902683 C141.759216,50.001095 138.003906,53.058273 132.585815,53.184734 C131.284103,53.215118 129.981079,53.189240 127.676903,53.189240 C129.835739,56.129337 131.518417,58.493084 133.274765,60.800777 C142.266144,72.614708 147.118118,86.208397 146.614380,100.771591 C146.085114,116.072929 141.422119,130.560471 131.091537,142.585510 C130.117035,143.719849 129.270660,144.964279 128.500000,146.516876 z"/><path d="M31.699917,92.702316 C29.569033,94.839378 27.686098,96.723663 25.811893,98.616577 C25.579943,98.850845 25.394461,99.131126 23.592041,100.979874 C25.216360,101.836746 27.171654,102.361359 28.415398,103.600281 C47.405785,122.517136 66.308037,141.522507 85.210693,160.527283 C86.372971,161.695831 87.651466,162.886261 88.382614,164.318344 C90.048645,167.581589 89.873062,170.951752 87.008087,173.422440 C84.112823,175.919281 80.793610,175.640915 77.908958,173.194580 C75.757889,171.370361 73.853439,169.253647 71.855186,167.251205 C51.862801,147.216858 31.871464,127.181488 11.885171,107.141075 C6.112062,101.352348 6.091965,98.198898 11.794316,92.472076 C32.822002,71.354164 53.855835,50.242371 74.887527,29.128452 C75.357513,28.656630 75.816788,28.173237 76.302551,27.718193 C79.892944,24.354891 84.793068,23.778179 87.510674,26.392004 C90.405373,29.176159 89.944160,34.233158 86.238716,37.962700 C68.167961,56.151001 50.051086,74.293480 31.699917,92.702316 z"/></svg>
         </button>
 
         <button type="button" class="key circle-button" data-b="silent" title="Silent" aria-label="Silent">
-          <svg class="icon silent" viewBox="0 0 100 100">
-            <path d="M24 42 H37 L52 29 L52 71 L37 58 H24 Z"/>
-            <path d="M61 42 L77 58 M77 42 L61 58"/>
-          </svg>
+          <svg class="glyph silent" viewBox="0 0 171 172"><path d="M132.400208,4.107055 C139.520569,4.010544 146.185242,3.996637 152.848694,3.898036 C156.558212,3.843145 159.160660,5.167383 159.137497,9.225245 C159.113907,13.354625 156.267853,14.432543 152.700104,14.473559 C146.704391,14.542485 140.682602,14.321496 134.718475,14.801853 C114.296829,16.446627 100.287224,36.102489 105.580391,55.825104 C106.672585,59.894684 106.292725,63.066982 104.148659,66.613838 C98.817047,75.433769 93.821083,84.456642 88.694229,93.400261 C84.450119,100.803940 84.608734,101.062073 93.359596,101.064407 C96.525505,101.065247 99.691856,101.030991 102.857231,101.072136 C108.329140,101.143257 110.027802,102.784676 110.058899,108.195854 C110.108696,116.860168 110.025894,125.525299 110.086617,134.189468 C110.155602,144.031433 116.073349,149.979935 125.984131,150.089706 C134.814270,150.187546 143.646698,150.159744 152.477386,150.091248 C156.406494,150.060776 159.853134,151.041794 159.819901,155.556885 C159.786758,160.061096 156.318588,160.992493 152.400620,160.958221 C143.570068,160.880951 134.736557,161.047028 125.907578,160.905853 C110.211960,160.654907 99.686813,150.136261 99.394135,134.441055 C99.257729,127.126083 99.370827,119.806473 99.370827,111.830666 C95.887581,111.830666 92.615135,111.921303 89.349159,111.814301 C77.904610,111.439346 72.046837,101.619072 77.502029,91.546188 C82.647514,82.045189 88.304733,72.822235 93.532013,63.363777 C94.489769,61.630760 95.105797,59.252766 94.799545,57.345955 C90.437653,30.187773 104.629890,9.760074 132.400208,4.107055 z"/><path d="M57.404518,111.999130 C57.366947,103.505524 57.289318,95.511772 57.316681,87.518379 C57.328358,84.106796 56.369671,81.240601 52.499157,81.400002 C49.065861,81.541389 48.003521,84.186798 48.028790,87.444977 C48.102417,96.936897 48.092270,106.429993 48.037315,115.922180 C48.007832,121.014908 46.225166,122.819977 41.171310,122.918098 C36.676540,123.005371 32.176186,122.841713 27.682930,122.961967 C20.984533,123.141228 17.663149,126.564476 17.633074,133.187973 C17.599804,140.515381 17.639612,147.843079 17.615711,155.170563 C17.603609,158.880997 16.500671,162.033829 12.133642,161.954620 C7.794735,161.875916 6.855743,158.775833 6.896298,155.013412 C6.977068,147.520203 6.901467,140.025452 6.924706,132.531448 C6.960588,120.960686 15.248454,112.480797 26.907576,112.126411 C30.202669,112.026245 33.503387,112.111107 37.316898,112.111107 C37.316898,103.628403 37.208164,95.525902 37.346348,87.427612 C37.495544,78.684181 42.470764,72.227592 49.744328,70.961845 C59.427521,69.276764 67.793442,75.974152 67.977402,85.887817 C68.187462,97.208710 68.072739,108.535637 68.097946,119.859947 C68.101585,121.496460 68.098450,123.132988 68.098450,124.735115 C82.591400,125.859688 87.853584,131.560440 87.858658,145.741852 C87.859856,149.072540 87.912575,152.404633 87.834404,155.733551 C87.752190,159.234741 85.935959,161.646835 82.418007,161.623596 C78.922737,161.600510 77.084717,159.246918 77.061142,155.693359 C77.033516,151.530151 77.106949,147.365677 77.034111,143.203537 C76.936348,137.616776 74.654785,135.760330 68.386093,136.401703 C68.304260,137.784836 68.085892,139.241653 68.158203,140.683884 C68.353729,144.583817 66.956413,147.537964 62.779270,147.492020 C58.523319,147.445206 57.522259,144.226089 57.528236,140.476288 C57.543102,131.150650 57.454197,121.824852 57.404518,111.999130 z"/></svg>
         </button>
 
         <button type="button" class="key circle-button" data-b="fan" title="Fan" aria-label="Fan">
-          <svg class="icon fan" viewBox="0 0 100 100">
-            <path d="M50 50 C35 38 34 20 47 20 C60 20 59 41 50 50 Z"/>
-            <path d="M50 50 C62 35 80 34 80 47 C80 60 59 59 50 50 Z"/>
-            <path d="M50 50 C65 62 66 80 53 80 C40 80 41 59 50 50 Z"/>
-            <path d="M50 50 C38 65 20 66 20 53 C20 40 41 41 50 50 Z"/>
-            <circle cx="50" cy="50" r="5"/>
-          </svg>
+          <svg class="glyph fan" viewBox="0 0 159 165"><path d="M55.411148,142.661301 C40.131187,146.330994 26.467579,143.827911 14.957239,133.518753 C12.103488,130.962814 9.920788,126.772179 9.136992,122.980057 C7.635140,115.713898 11.250050,110.781944 18.497984,108.921440 C30.669321,105.797134 41.970440,100.876373 52.942978,93.212616 C43.475075,91.680412 35.464123,88.497322 28.650120,82.613815 C10.736693,67.146576 8.568398,39.444664 24.192123,21.712156 C26.384602,19.223749 29.580250,17.128416 32.722416,16.063829 C40.679634,13.367871 46.986191,16.974220 49.121098,25.110096 C52.056667,36.297218 56.405315,46.825928 62.790241,56.488243 C63.321640,57.292412 63.909184,58.059475 64.843437,59.364532 C66.549622,48.433792 70.698448,39.415535 78.319450,32.128967 C94.327927,16.823002 120.068604,16.162695 136.478958,30.829760 C138.409500,32.555222 140.167068,34.758160 141.257187,37.089359 C145.325974,45.790504 141.556641,53.473747 132.288727,55.946781 C118.506035,59.624519 106.987663,64.933640 99.471786,71.109673 C103.679817,72.435898 107.975433,73.388756 111.941078,75.104362 C138.509552,86.598373 146.339264,121.068764 127.339600,142.877563 C125.539597,144.943695 123.153824,146.789490 120.667625,147.915131 C112.183022,151.756531 104.370567,147.970383 102.156372,138.939789 C99.234261,127.022011 94.225403,116.122025 86.781204,105.145287 C83.383629,124.041969 73.514122,136.659653 55.411148,142.661301 M110.926094,126.674179 C112.015663,130.261246 113.105232,133.848312 114.202026,137.459137 C123.651711,133.820557 128.597412,117.364395 124.402077,104.832932 C119.032501,88.794006 102.456711,79.917061 85.999588,84.654968 C96.519829,97.163971 105.325005,110.536125 110.926094,126.674179 M40.343781,113.933212 C33.856094,116.264992 27.368410,118.596771 20.887472,120.926125 C23.339201,130.020401 41.157890,135.287949 53.927391,130.755356 C69.563774,125.205154 78.998322,106.694328 73.531441,93.958405 C62.775921,100.475365 51.909714,107.059395 40.343781,113.933212 M36.665131,27.138859 C35.019627,28.433062 32.952316,29.429991 31.796825,31.069534 C24.085661,42.011024 23.224274,53.611427 29.669958,65.362129 C36.687622,78.155579 52.881405,84.621864 65.454697,79.622093 C51.904049,64.358032 42.421238,47.029240 36.665131,27.138859 M95.561798,59.052517 C107.174286,53.538639 118.786774,48.024757 130.490753,42.467434 C126.980736,33.276493 107.950249,28.796158 94.787613,35.020588 C80.681084,41.691368 72.285156,60.546997 78.460007,71.418716 C83.950996,67.433685 89.453117,63.440575 95.561798,59.052517 z"/></svg>
         </button>
 
         <button type="button" class="key circle-button" data-b="timer" title="Timer" aria-label="Timer">
-          <svg class="icon clock" viewBox="0 0 100 100"><circle cx="50" cy="50" r="31"/><path d="M50 30 V51 H66"/></svg>
+          <svg class="icon" viewBox="0 0 100 100"><circle cx="50" cy="52" r="30"/><path d="M50 52 L50 33 M50 52 L64 59"/></svg>
         </button>
       </section>
 
       <section class="middle-row">
         <div class="pill-control">
           <button type="button" class="key half" data-b="eco" title="Eco" aria-label="Eco">
-            <svg class="icon eco" viewBox="0 0 100 100">
-              <path d="M22 50 L52 26 L82 50"/><path d="M68 36 V29 H77 V43"/><path d="M29 47 V79 H75 V47"/>
-              <path d="M47 57 C37 60 36 71 45 76 C54 71 53 60 47 57 Z"/><path d="M44 75 L48 59"/>
-            </svg>
+            <svg class="glyph eco" viewBox="0 0 208 192"><path d="M98.992020,24.771114 C108.079926,27.753553 115.910713,32.630096 124.409599,36.020401 C126.229836,36.746517 127.867928,38.056557 129.980270,37.840893 C131.309036,36.658295 130.863205,35.004360 131.199280,33.608521 C132.147644,29.669647 134.363281,27.542791 138.569473,27.644884 C142.231461,27.733765 145.899200,27.587032 149.561066,27.678411 C154.689743,27.806393 157.076965,30.165085 157.271515,35.415333 C157.419434,39.407425 157.472336,43.416519 157.274170,47.403469 C157.128464,50.334660 158.275970,51.999638 160.898026,53.190086 C167.718475,56.286659 174.454910,59.568367 181.223740,62.778542 C184.052536,64.120117 187.019775,65.728745 185.438660,69.453094 C183.721771,73.497238 180.441574,72.346344 177.383026,70.944321 C174.384995,69.570015 171.376266,68.218979 168.369980,66.856712 C166.684906,68.952248 167.310059,71.018188 167.306763,72.905823 C167.257584,101.053360 167.279572,129.201004 167.262146,157.348618 C167.256332,166.728745 164.170624,169.971420 154.667450,170.001617 C126.853218,170.089981 99.038521,170.042236 71.224045,170.012939 C69.742165,170.011383 68.239334,169.792328 66.783875,169.492111 C64.556068,169.032623 63.210396,167.527496 63.234661,165.286972 C63.261559,162.803314 64.857613,161.286469 67.237099,160.885101 C68.862633,160.610931 70.556824,160.701645 72.220345,160.701157 C98.702438,160.693314 125.185318,160.593353 151.665894,160.794708 C156.386566,160.830597 157.992798,159.571228 157.959000,154.669647 C157.757019,125.357582 157.802521,96.043159 157.934341,66.730286 C157.950943,63.036415 156.724869,61.010597 153.363647,59.482410 C136.693848,51.903423 120.066597,44.225307 103.548279,36.323074 C100.000214,34.625713 97.131203,34.764305 93.734863,36.448917 C85.683784,40.442318 77.491974,44.152699 69.343964,47.949417 C67.686264,48.721859 66.020538,49.549580 64.270531,50.033978 C61.829880,50.709541 59.573013,50.357380 58.423340,47.677834 C57.241718,44.923813 58.680302,43.096806 60.936909,41.975983 C66.601051,39.162697 72.316673,36.444633 78.085419,33.852547 C84.903221,30.789076 91.398140,26.991680 98.992020,24.771114 M145.200974,45.862183 C150.245834,46.209473 148.136978,42.370399 148.408859,40.130199 C148.831070,36.651325 146.563507,36.273426 143.721832,36.281700 C140.235229,36.291859 140.319138,38.439774 140.262497,40.894947 C140.192245,43.940945 142.534210,44.575851 145.200974,45.862183 z"/><path d="M54.229774,152.332932 C51.025524,152.873856 51.334072,155.079239 51.279865,157.052429 C51.197578,160.047684 51.383583,163.070557 51.034435,166.032043 C50.737309,168.552292 49.220863,170.334869 46.355064,170.264954 C43.702454,170.200241 42.417603,168.432770 42.123581,166.135452 C41.787304,163.507965 41.601349,160.788101 41.895809,158.169769 C42.365669,153.991699 40.664814,152.237839 36.621750,151.551468 C26.649153,149.858505 18.662277,144.764908 12.761031,136.517212 C3.489338,123.558922 3.171732,108.118286 12.356076,94.466011 C21.836601,80.373466 31.660437,66.511002 41.401508,52.595078 C44.945568,47.532097 47.946121,47.479561 51.426796,52.466076 C61.245541,66.532715 71.178650,80.526718 80.671738,94.811806 C95.107460,116.534492 83.794113,145.086212 58.511532,151.348907 C57.220356,151.668747 55.923878,151.967178 54.229774,152.332932 M75.724030,126.109505 C79.421661,116.361702 78.397507,107.247292 72.353004,98.641006 C64.599312,87.601158 57.016106,76.441689 49.315399,65.364372 C48.498909,64.189873 47.943264,62.658749 45.845890,62.177132 C44.509975,64.072823 43.076427,66.071541 41.679356,68.095459 C34.016403,79.196640 25.940474,90.040779 18.808109,101.473373 C9.072345,117.079002 18.654518,138.548279 36.633507,142.427505 C38.311901,142.789627 40.325462,143.542557 41.503517,141.328278 C43.343712,137.869431 41.266953,124.902611 38.426685,122.026558 C35.501122,119.064125 32.486320,116.184715 29.663681,113.127609 C27.914299,111.232903 27.340115,108.868996 29.378006,106.866974 C31.455267,104.826271 33.837269,105.059998 36.128662,106.846397 C37.766834,108.123528 38.694916,110.369507 41.172661,110.661255 C42.325230,108.940582 41.769966,107.068474 41.804996,105.313988 C41.901417,100.484901 41.774197,95.650993 41.892506,90.822838 C41.963837,87.912094 43.113731,85.277550 46.379929,85.227669 C49.899353,85.173889 51.098083,87.838852 51.226635,90.996811 C51.301125,92.826591 51.214638,94.662689 51.279404,96.493156 C51.447170,101.234749 50.820614,106.019081 51.724529,111.073059 C54.430641,110.156990 55.532852,107.872154 57.422791,106.641861 C59.558807,105.251389 61.819725,104.772736 63.776501,106.815353 C65.723412,108.847679 65.402878,111.107986 63.615021,113.082146 C61.715988,115.179047 59.916176,117.511131 57.620911,119.078362 C48.343178,125.413292 51.803631,134.504669 51.366230,143.522202 C62.784485,141.756287 70.716736,136.609482 75.724030,126.109505 z"/></svg>
           </button>
           <button type="button" class="key half mode-label" data-b="mode" title="Mode" aria-label="Mode">MODE</button>
         </div>
 
         <div class="split-control">
           <button type="button" class="key half" data-b="down" title="Down" aria-label="Down">
-            <svg class="chevron" viewBox="0 0 80 80"><path d="M18 28 L40 52 L62 28"/></svg>
+            <svg class="chevron" viewBox="0 0 100 100"><path d="M28 40 L50 62 L72 40"/></svg>
           </button>
           <button type="button" class="key half" data-b="up" title="Up" aria-label="Up">
-            <svg class="chevron" viewBox="0 0 80 80"><path d="M18 52 L40 28 L62 52"/></svg>
+            <svg class="chevron" viewBox="0 0 100 100"><path d="M28 60 L50 38 L72 60"/></svg>
           </button>
         </div>
 
         <button type="button" class="key power-button" data-b="power" title="Power" aria-label="Power">
-          <svg class="icon power" viewBox="0 0 100 100">
-            <path d="M50 18 V45"/>
-            <path d="M34 32 C23 39 17 51 20 64 C24 80 39 89 55 86 C71 83 82 70 80 54 C78 44 72 36 64 31"/>
-          </svg>
+          <svg class="icon power" viewBox="0 0 100 100"><path d="M50 22 V48"/><path d="M33 34 A30 30 0 1 0 67 34"/></svg>
         </button>
       </section>
 
@@ -227,12 +249,12 @@
           <span class="ind" id="indEco">ECO</span>
           <span class="ind" id="indSilent">SILENT</span>
           <span class="ind" id="indSwing">SWING</span>
-          <span class="ind" id="indTimer"><span class="tclock">⏱</span></span>
+          <span class="ind" id="indTimer"><span class="tclock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg></span></span>
         </div>
         <div class="baro">
-          <span class="cell"><span class="ic">🌡</span><b id="scrT">--.-</b><small>°C</small></span>
-          <span class="cell"><span class="ic">💧</span><b id="scrH">--</b><small>%</small></span>
-          <span class="cell"><span class="ic">🧭</span><b id="scrP">----</b><small>hPa</small></span>
+          <span class="cell"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg></span><b id="scrT">--.-</b><small>°C</small></span>
+          <span class="cell"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg></span><b id="scrH">--</b><small>%</small></span>
+          <span class="cell"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14l3.5-3.5"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg></span><b id="scrP">----</b><small>hPa</small></span>
         </div>
         <div class="statusbar">
           <div class="grp"><span class="sdot" id="dWifi"></span>Wi-Fi</div>
@@ -249,13 +271,14 @@
       <span data-i18n="syncBanB">appuyez sur les touches pour reproduire l'état affiché par le climatiseur. Aucun signal n'est envoyé.</span>
     </div>
     <div style="display:flex; gap:8px; margin-top:10px">
-      <button class="ui" data-i18n="sync30" onclick="syncWindow()">⟳ Synchroniser (30 s)</button>
+      <button class="ui sync-btn" onclick="syncWindow()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg><span data-i18n="sync30">Synchroniser (30 s)</span></button>
     </div>
     <p class="small" data-i18n="syncHelp" style="margin-top:8px">L'écran reflète l'état modélisé du
       climatiseur (boucle ouverte). En cas de dérive, lancez « Synchroniser » et reproduisez sur les
       touches l'état réellement affiché par le climatiseur — rien n'est envoyé pendant ces 30 s.</p>
   </div>
 
+  <div id="settings">
   <div class="card" id="wifiCard">
     <h2>Wi-Fi</h2>
     <p class="small" id="wifiState"></p>
@@ -315,6 +338,7 @@
       Désapparier efface le lien et le repasse en mode appairage ; mettez ensuite la clim en mode
       appairage (MODE ~10 s). Apparier relance la diffusion si besoin.</p>
   </div>
+  </div>
 </main>
 <script>
 const $ = s => document.querySelector(s);
@@ -322,7 +346,8 @@ const $ = s => document.querySelector(s);
 // ---- i18n (FR/EN/DE), auto from browser, override via the header selector ----
 const I18N = {
   remote:{fr:'Télécommande',en:'Remote',de:'Fernbedienung'},
-  sync30:{fr:'⟳ Synchroniser (30 s)',en:'⟳ Sync (30 s)',de:'⟳ Synchronisieren (30 s)'},
+  settings:{fr:'Réglages',en:'Settings',de:'Einstellungen'},
+  sync30:{fr:'Synchroniser (30 s)',en:'Sync (30 s)',de:'Synchronisieren (30 s)'},
   syncBanA:{fr:'Mode synchro',en:'Sync mode',de:'Sync-Modus'},
   syncBanB:{fr:"appuyez sur les touches pour reproduire l'état affiché par le climatiseur. Aucun signal n'est envoyé.",
             en:'press the keys to reproduce what the AC shows. Nothing is sent.',
@@ -403,12 +428,14 @@ function applyI18n(){
 async function press(b, el){
   el.classList.add('flash'); setTimeout(()=>el.classList.remove('flash'), 200);
   try { await fetch('/api/press', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'btn='+b}); } catch(e){}
-  setTimeout(refresh, 350);   // reflect the modeled state quickly (esp. during a sync window)
+  // Taps closer than the AC's touch debounce are dropped server-side, so the model only moves for
+  // accepted presses. Refresh now, then again past the timer edit window to show the EDIT->RUN settle.
+  [300, 4300].forEach(t => setTimeout(refresh, t));
 }
 
 // ---- AC display helpers (manual icons) + sync window ----
 const MODE_SVG = {
-  cool:'<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M3.5 7l17 10M20.5 7l-17 10"/><path d="M9 4l3 2 3-2M9 20l3-2 3 2M4 10l1 3-1 3M20 10l-1 3 1 3"/></svg>',
+  cool:'<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 20-1.25-2.5L6 18"/><path d="M10 4 8.75 6.5 6 6"/><path d="m14 20 1.25-2.5L18 18"/><path d="m14 4 1.25 2.5L18 6"/><path d="m17 21-3-6h-4"/><path d="m17 3-3 6 1.5 3"/><path d="M2 12h6.5L10 9"/><path d="m20 10-1.5 2 1.5 2"/><path d="M22 12h-6.5L14 15"/><path d="m4 10 1.5 2L4 14"/><path d="m7 21 3-6-1.5-3"/><path d="m7 3 3 6h4"/></svg>',
   dry:'<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3c3.6 4.6 6 7.7 6 10.6A6 6 0 0 1 6 13.6C6 10.7 8.4 7.6 12 3z"/></svg>',
   fan:'<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M12 10c-3-2.6-3-7 0-7s3 4.4 0 7m2 2c2.6-3 7-3 7 0s-4.4 3-7 0m-2 2c3 2.6 3 7 0 7s-3-4.4 0-7m-2-2c-2.6 3-7 3-7 0s4.4-3 7 0"/></svg>',
 };
@@ -418,6 +445,8 @@ function fanBars(fan){
   let h=''; for (let i=1;i<=3;i++) h += '<i class="'+(i<=n?'on':'')+'" style="height:'+(2+i*1.7)+'cqw"></i>';
   return h;
 }
+const CLOCK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>';
+const EDIT_SVG = ' <svg class="pencil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
 let syncEnd = 0;
 async function syncWindow(){
   try { await fetch('/api/mute', {method:'POST',
@@ -445,6 +474,10 @@ async function refresh(){
     const s = await (await fetch('/api/status')).json();
     $('#dot').className = s.state;
     $('#st').textContent = s.state + (s.ip ? ' · '+s.ip : '');
+
+    // first run with no saved preference: reveal settings while the device needs setup
+    if (!settingsAuto) { settingsAuto = true;
+      if (savedSettings === null && s.state !== 'connected') setSettings(true); }
 
     // screen — barometer (temp / humidity / pressure)
     $('#scrT').textContent = s.bme ? s.temp : '--.-';
@@ -489,7 +522,16 @@ async function refresh(){
       const tEl = $('#indTimer');
       if (tEl) { const lit = a.timer !== 'off';
         tEl.classList.toggle('on', lit);
-        tEl.innerHTML = '<span class="tclock">⏱</span>' + (lit ? ' '+a.timer_h.toFixed(1)+'h'+(a.timer==='edit'?' ✎':'') : ''); }
+        tEl.innerHTML = '<span class="tclock">'+CLOCK_SVG+'</span>' + (lit ? ' '+a.timer_h.toFixed(1)+'h'+(a.timer==='edit'?EDIT_SVG:'') : ''); }
+
+      // mode-aware affordance: dim controls that don't apply in the current AC state
+      const dimBtn = (b,d)=>{ const el=document.querySelector('[data-b="'+b+'"]'); if (el) el.classList.toggle('dim',!!d); };
+      const off = !a.on, notCool = a.mode!=='cool', editing = a.timer==='edit';
+      dimBtn('mode', off); dimBtn('flap', off);
+      dimBtn('fan', off || a.mode==='dry');           // fan forced auto in dry
+      // up/down set the timer while editing (any state), else the setpoint (cool only)
+      dimBtn('up', !editing && (off || notCool)); dimBtn('down', !editing && (off || notCool));
+      dimBtn('eco', off || notCool); dimBtn('silent', off || notCool); // eco/silent = cool only
     }
   } catch(e){}
 }
@@ -598,11 +640,24 @@ async function saveRules(){
 const langSel = $('#langSel');
 langSel.value = L;
 langSel.onchange = () => { L = langSel.value; localStorage.setItem('lang', L);
-  document.documentElement.lang = L; applyI18n();
+  document.documentElement.lang = L; applyI18n(); settingsBtn.title = t('settings');
   if (document.querySelector('#ruleList .rule')) RULES = collectRules();  // keep unsaved edits
   renderRules(); refresh(); };
 
-applyI18n();
+// collapsible settings panel (toggled by the header gear) — remote + Sync stay always visible
+const settingsBtn = $('#settingsBtn');
+function setSettings(open, persist=true){
+  $('#settings').classList.toggle('open', open);
+  settingsBtn.classList.toggle('active', open);
+  settingsBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (persist) localStorage.setItem('settings', open ? 'open' : 'closed');
+}
+const savedSettings = localStorage.getItem('settings');
+let settingsAuto = false;
+settingsBtn.onclick = () => setSettings(!$('#settings').classList.contains('open'));
+setSettings(savedSettings === 'open', false);   // default collapsed
+
+applyI18n(); settingsBtn.title = t('settings');
 loadPins();
 loadRules();
 refresh(); setInterval(refresh, 3000);
