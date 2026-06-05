@@ -26,13 +26,18 @@ static QueueHandle_t s_q;
 
 static void press(const char *b)
 {
-    // Wait until a full gap has elapsed since the LAST registered press — which includes a web tap
-    // that interleaved between two worker presses (uart_link stamps every press). Pacing *before*
-    // the press, off the shared timestamp, keeps the AC-registered gap correct in that case; a
-    // fixed delay-after would let the worker fire ~0.2 s behind such a tap and be coalesced away.
-    int64_t wait_us = (int64_t)UART_LINK_PRESS_GAP_MS * 1000 - uart_link_since_press_us();
-    if (wait_us > 0) vTaskDelay(pdMS_TO_TICKS((TickType_t)(wait_us / 1000) + 1));
-    uart_link_press(b);                       // relays to nRF AND updates ac_state
+    // Wait until a full gap has elapsed since the last relayed press — which includes a web tap
+    // that interleaved between worker presses (uart_link stamps every relayed press) — then fire.
+    // Pacing *before* the press off the shared timestamp keeps the AC-registered gap correct; a
+    // fixed delay-after would let the worker fire just behind such a tap and be coalesced away.
+    // If a tap still races in during the wait, uart_link_press() coalesces ours (returns false);
+    // re-wait and retry so the sequence doesn't silently drop a step. Bounded so non-stop
+    // interleaving taps can't hang the worker.
+    for (int attempt = 0; attempt < 10; attempt++) {
+        int64_t wait_us = (int64_t)UART_LINK_PRESS_GAP_MS * 1000 - uart_link_since_press_us();
+        if (wait_us > 0) vTaskDelay(pdMS_TO_TICKS((TickType_t)(wait_us / 1000) + 1));
+        if (uart_link_press(b)) return;       // relayed + folded into ac_state
+    }
 }
 
 // A press only updates the model when the relay is ready (or we're syncing). If neither, the AC
