@@ -41,9 +41,17 @@
   .ac-state .off { color:var(--mut); }
 
   /* ---- lit buttons reflecting modeled AC state ---- */
-  .circle-button.lit, .half.lit {
+  .circle-button.lit {
     background:rgba(56,189,248,.26)!important; border-color:var(--cool)!important;
     box-shadow:0 0 0 .4cqw rgba(56,189,248,.5), inset 0 0 2.6cqw rgba(56,189,248,.35); }
+  /* halves live inside a pill: a contained inset highlight, never an outer ring that
+     would bleed across the central divider line */
+  .half.lit {
+    background:rgba(56,189,248,.30)!important;
+    box-shadow:inset 0 0 2.4cqw rgba(56,189,248,.4)!important; }
+  /* round only the outer corner of each half so the fill meets the divider squarely */
+  .pill-control .half:first-child, .split-control .half:first-child { border-radius:999px 0 0 999px; }
+  .pill-control .half:last-child,  .split-control .half:last-child  { border-radius:0 999px 999px 0; }
   .power-button.on {
     background:rgba(52,211,153,.22); border-color:#34d399;
     box-shadow:0 0 0 .4cqw rgba(52,211,153,.5), inset 0 0 2.6cqw rgba(52,211,153,.3); }
@@ -124,7 +132,9 @@
 
   .pill-control, .split-control { position:relative; height:clamp(46px,13cqw,112px);
     border:.5cqw solid rgba(246,248,251,.92); border-radius:999px; display:grid;
-    grid-template-columns:1fr 1fr; align-items:center; background:rgba(0,0,0,.04); }
+    grid-template-columns:1fr 1fr; align-items:center; background:rgba(0,0,0,.04);
+    overflow:hidden; }   /* clip the lit/hover fill inside the rounded border */
+  .half:focus-visible { outline-offset:-2px; }   /* inset ring so focus stays visible despite clip */
   .pill-control::before, .split-control::before { content:""; position:absolute; left:50%; top:20%; bottom:20%;
     width:1.5px; background:rgba(255,255,255,.16); transform:translateX(-50%); z-index:3; pointer-events:none; }
   .half { position:relative; z-index:2; display:grid; place-items:center; height:100%; background:transparent;
@@ -154,9 +164,17 @@
     .middle-row { top:34%; }
     .screen { height:40%; }
   }
-  /* header language switcher */
+  /* header language switcher + settings toggle */
   #langSel { width:auto; margin:0; padding:4px 6px; font-size:12px; border-radius:6px;
     border:1px solid #2b3543; background:#0d1117; color:var(--fg); }
+  .hicon { width:auto; margin:0; padding:5px; border-radius:6px; border:1px solid #2b3543;
+    background:#0d1117; color:var(--mut); cursor:pointer; display:inline-flex; align-items:center; transition:.2s; }
+  .hicon:hover { color:var(--fg); border-color:#3a4754; }
+  .hicon.active { color:var(--cool); border-color:var(--cool); }
+  .hicon svg { width:18px; height:18px; }
+  #settings { display:none; }
+  #settings.open { display:block; animation:settingsIn .2s ease-out; }
+  @keyframes settingsIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }
 </style>
 </head>
 <body>
@@ -164,6 +182,7 @@
   <span id="dot"></span>
   <h1>Ganymede Bridge</h1>
   <span id="st" class="small" style="margin-left:auto"></span>
+  <button id="settingsBtn" class="hicon" aria-label="Settings" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
   <select id="langSel" aria-label="Language"><option value="fr">FR</option><option value="en">EN</option><option value="de">DE</option></select>
 </header>
 <main>
@@ -268,6 +287,7 @@
       touches l'état réellement affiché par le climatiseur — rien n'est envoyé pendant ces 30 s.</p>
   </div>
 
+  <div id="settings">
   <div class="card" id="wifiCard">
     <h2>Wi-Fi</h2>
     <p class="small" id="wifiState"></p>
@@ -327,6 +347,7 @@
       Désapparier efface le lien et le repasse en mode appairage ; mettez ensuite la clim en mode
       appairage (MODE ~10 s). Apparier relance la diffusion si besoin.</p>
   </div>
+  </div>
 </main>
 <script>
 const $ = s => document.querySelector(s);
@@ -334,6 +355,7 @@ const $ = s => document.querySelector(s);
 // ---- i18n (FR/EN/DE), auto from browser, override via the header selector ----
 const I18N = {
   remote:{fr:'Télécommande',en:'Remote',de:'Fernbedienung'},
+  settings:{fr:'Réglages',en:'Settings',de:'Einstellungen'},
   sync30:{fr:'Synchroniser (30 s)',en:'Sync (30 s)',de:'Synchronisieren (30 s)'},
   syncBanA:{fr:'Mode synchro',en:'Sync mode',de:'Sync-Modus'},
   syncBanB:{fr:"appuyez sur les touches pour reproduire l'état affiché par le climatiseur. Aucun signal n'est envoyé.",
@@ -459,6 +481,10 @@ async function refresh(){
     const s = await (await fetch('/api/status')).json();
     $('#dot').className = s.state;
     $('#st').textContent = s.state + (s.ip ? ' · '+s.ip : '');
+
+    // first run with no saved preference: reveal settings while the device needs setup
+    if (!settingsAuto) { settingsAuto = true;
+      if (savedSettings === null && s.state !== 'connected') setSettings(true); }
 
     // screen — barometer (temp / humidity / pressure)
     $('#scrT').textContent = s.bme ? s.temp : '--.-';
@@ -621,11 +647,24 @@ async function saveRules(){
 const langSel = $('#langSel');
 langSel.value = L;
 langSel.onchange = () => { L = langSel.value; localStorage.setItem('lang', L);
-  document.documentElement.lang = L; applyI18n();
+  document.documentElement.lang = L; applyI18n(); settingsBtn.title = t('settings');
   if (document.querySelector('#ruleList .rule')) RULES = collectRules();  // keep unsaved edits
   renderRules(); refresh(); };
 
-applyI18n();
+// collapsible settings panel (toggled by the header gear) — remote + Sync stay always visible
+const settingsBtn = $('#settingsBtn');
+function setSettings(open, persist=true){
+  $('#settings').classList.toggle('open', open);
+  settingsBtn.classList.toggle('active', open);
+  settingsBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (persist) localStorage.setItem('settings', open ? 'open' : 'closed');
+}
+const savedSettings = localStorage.getItem('settings');
+let settingsAuto = false;
+settingsBtn.onclick = () => setSettings(!$('#settings').classList.contains('open'));
+setSettings(savedSettings === 'open', false);   // default collapsed
+
+applyI18n(); settingsBtn.title = t('settings');
 loadPins();
 loadRules();
 refresh(); setInterval(refresh, 3000);
