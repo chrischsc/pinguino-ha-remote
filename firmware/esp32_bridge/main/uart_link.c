@@ -71,10 +71,18 @@ bool uart_link_valid_btn(const char *btn)
 // user can re-align the model to the AC's real display by pressing the remote without actuating.
 static int64_t s_mute_until_us;
 
-// Timestamp of the last registered press (relayed or model-only). The web handler uses it to drop
-// rapid taps, mirroring the AC's ~1.5 s capacitive-touch debounce (which coalesces fast taps).
+// Timestamp of the last registered press (relayed or model-only), guarding the AC's ~1.5 s
+// capacitive-touch debounce. Read/stamped under a spinlock so the web task and the HA worker
+// can't both pass the gap check on a stale value and double-press within the AC's debounce.
 static int64_t s_last_press_us;
-int64_t uart_link_since_press_us(void) { return esp_timer_get_time() - s_last_press_us; }
+static portMUX_TYPE s_press_mux = portMUX_INITIALIZER_UNLOCKED;
+int64_t uart_link_since_press_us(void)
+{
+    portENTER_CRITICAL(&s_press_mux);
+    int64_t last = s_last_press_us;
+    portEXIT_CRITICAL(&s_press_mux);
+    return esp_timer_get_time() - last;
+}
 
 void uart_link_mute(int seconds)
 {
@@ -102,8 +110,17 @@ bool uart_link_will_model(void)
 bool uart_link_press(const char *btn)
 {
     if (!uart_link_valid_btn(btn)) return false;
-    s_last_press_us = esp_timer_get_time();           // stamp for the web debounce (any registered press)
-    bool muted = esp_timer_get_time() < s_mute_until_us;
+    // Atomically claim the press: register it only if a full gap has elapsed since the last one,
+    // stamping under the lock. Both the web handler and the HA worker funnel through here, so the
+    // check-and-stamp being atomic is what stops a tap + a worker press double-firing in the gap.
+    int64_t now = esp_timer_get_time();
+    portENTER_CRITICAL(&s_press_mux);
+    bool too_soon = (now - s_last_press_us) < (int64_t)UART_LINK_PRESS_GAP_MS * 1000;
+    if (!too_soon) s_last_press_us = now;
+    portEXIT_CRITICAL(&s_press_mux);
+    if (too_soon) return false;                       // within the AC's debounce -> coalesced, drop
+
+    bool muted = now < s_mute_until_us;
     if (!muted) {
         char line[32];
         int n = snprintf(line, sizeof(line), "press %s\n", btn);
