@@ -9,28 +9,36 @@
 
 static const char *TAG = "accmd";
 
-// The AC's capacitive touch buttons debounce ~1.5 s: presses closer than that are dropped,
-// which silently desyncs an open-loop multi-press sequence (e.g. fan->dry needs two "mode"
-// presses). Pace like a human, comfortably above the debounce. Raise this if drift persists.
-#define PRESS_GAP_MS 1800
+// The AC's capacitive touch buttons debounce ~1.5 s: presses closer than that are dropped, which
+// silently desyncs an open-loop multi-press sequence (e.g. fan->dry needs two "mode" presses).
+// Pace to UART_LINK_PRESS_GAP_MS, comfortably above the debounce.
 #define MAX_STEPS    40       // hard cap on any single sequence (temp can need many)
-#define QUEUE_DEPTH  16
-#define HA_RESERVE    6       // queue slots kept free for HA cmds so a tap flood can't starve them
 
-typedef enum { REQ_MODE, REQ_TEMP, REQ_FAN, REQ_SW, REQ_RAW } req_kind_t;
+typedef enum { REQ_MODE, REQ_TEMP, REQ_FAN, REQ_SW } req_kind_t;
 typedef struct {
     req_kind_t kind;
     int  ival;            // MODE: ac_mode_t | TEMP: target | FAN: ac_fan_t | SW: on(0/1)
     bool on;              // MODE: want_on
-    char name[8];         // SW: which ("swing"/"eco"/"silent") | RAW: button name
+    char name[8];         // SW: which ("swing"/"eco"/"silent")
 } ac_req_t;
 
 static QueueHandle_t s_q;
 
 static void press(const char *b)
 {
-    uart_link_press(b);                       // relays to nRF AND updates ac_state
-    vTaskDelay(pdMS_TO_TICKS(PRESS_GAP_MS));
+    // Wait until a full gap has elapsed since the last relayed press — which includes a web tap
+    // that interleaved between worker presses (uart_link stamps every relayed press) — then fire.
+    // Pacing *before* the press off the shared timestamp keeps the AC-registered gap correct; a
+    // fixed delay-after would let the worker fire just behind such a tap and be coalesced away.
+    // If a tap still races in during the wait, uart_link_press() coalesces ours (returns false);
+    // re-wait and retry so the sequence doesn't silently drop a step. Bounded so non-stop
+    // interleaving taps can't hang the worker.
+    for (int attempt = 0; attempt < 10; attempt++) {
+        if (!uart_link_will_model()) return;  // link dropped / not commandable — stop; do_* re-checks
+        int64_t wait_us = (int64_t)UART_LINK_PRESS_GAP_MS * 1000 - uart_link_since_press_us();
+        if (wait_us > 0) vTaskDelay(pdMS_TO_TICKS((TickType_t)(wait_us / 1000) + 1));
+        if (uart_link_press(b)) return;       // relayed + folded into ac_state
+    }
 }
 
 // A press only updates the model when the relay is ready (or we're syncing). If neither, the AC
@@ -94,37 +102,17 @@ static void worker(void *arg)
             case REQ_TEMP: do_temp(r.ival);                  break;
             case REQ_FAN:  do_fan((ac_fan_t)r.ival);         break;
             case REQ_SW:   do_switch(r.name, r.ival != 0);   break;
-            // Raw entries are only ever queued for *live* taps (h_press sends sync/offline
-            // presses straight through). Deliver one only if it can still reach the AC now: if a
-            // sync window opened or the link dropped while it waited, discard it rather than fold
-            // it into the model alone (model would advance while the AC never moves -> drift).
-            case REQ_RAW:  if (uart_link_ready() && uart_link_mute_secs() == 0) press(r.name); break;
         }
     }
 }
 
 void ac_cmd_init(void)
 {
-    // Depth covers a burst of raw remote taps queued behind an in-flight HA sequence.
-    s_q = xQueueCreate(QUEUE_DEPTH, sizeof(ac_req_t));
+    s_q = xQueueCreate(8, sizeof(ac_req_t));
     xTaskCreate(worker, "ac_cmd", 3072, NULL, 4, NULL);
 }
 
 static void enqueue(const ac_req_t *r) { if (s_q) xQueueSend(s_q, r, 0); }
-
-bool ac_cmd_press(const char *btn)
-{
-    // Validate up front (same check uart_link_press would do) so a typo returns {"ok":false}
-    // and never costs a queue slot + a PRESS_GAP_MS idle in the worker.
-    if (!s_q || !btn || !uart_link_valid_btn(btn)) return false;
-    // Raw taps share s_q with HA climate/switch commands. Keep HA_RESERVE slots free so a flood
-    // of taps can't fill the queue and silently drop an HA command; excess taps are dropped here
-    // (the AC's touch debounce would coalesce them anyway).
-    if (uxQueueSpacesAvailable(s_q) <= HA_RESERVE) return false;
-    ac_req_t r = { .kind = REQ_RAW };
-    strlcpy(r.name, btn, sizeof(r.name));
-    return xQueueSend(s_q, &r, 0) == pdTRUE;
-}
 
 void ac_cmd_set_mode_ha(const char *ha_mode)
 {
