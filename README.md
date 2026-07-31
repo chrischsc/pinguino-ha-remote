@@ -1,3 +1,6 @@
+# this fork removes the need for the nrf using just the esp32 for this. 
+
+
 # pinguino-ha-remote
 
 ![De'Longhi Pinguino, now connected: web UI, Home Assistant, MQTT/HTTP, ambient sensor, via an emulated BLE remote on an ESP32-S3 + nRF52840 bridge](docs/assets/photos/feature-overview.png)
